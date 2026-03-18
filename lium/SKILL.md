@@ -25,11 +25,9 @@ This auto-detects OS (Linux/macOS) and architecture, downloads the binary to `~/
 After install, initialize authentication:
 
 ```bash
-lium init --no-browser
+lium init              # opens browser automatically
+lium init --no-browser  # prints auth URL (for headless/agent use)
 ```
-
-This prints an auth URL — open it in a browser, approve access, and the CLI receives the API key automatically.
-If running interactively with a browser available, plain `lium init` opens the URL automatically.
 
 Verify setup:
 
@@ -54,43 +52,34 @@ pip install lium.io
 
 ### Authentication Setup for Agents
 
-**Preferred: `lium init --no-browser`** (no API key needed upfront):
+**Preferred: two-step headless auth** — no API key needed, no blocking, no browser:
+
+1. Run `lium init --no-browser` — get auth URL and session ID (exits immediately)
+2. Show the URL to the user, ask them to open it and click Approve
+3. Wait for user to confirm they approved
+4. Run `lium init --session <SESSION_ID>` — saves API key + sets up SSH
 
 ```bash
 lium init --no-browser
+# [i] Open this URL to authenticate:
+#     https://lium.io/cli/approve/xJinnT3Vt6...
+# [i] Then complete authentication with:
+#     lium init --session abc123def456
+
+# ... user confirms they approved ...
+
+lium init --session abc123def456
+# [✓] API key saved
 ```
 
-How it works:
-1. CLI calls `POST /api/cli-auth/init` and receives a unique auth URL
-2. CLI prints the URL to stdout — show it to the user and ask them to open it in a browser
-3. CLI polls the backend for approval (timeout: 5 minutes)
-4. Once the user approves in the browser, the CLI automatically receives the API key
-5. API key and SSH key path are saved to `~/.lium/config.ini`
-
-This is the best option for agents because:
-- No need to ask the user for their API key — they just click a link
-- The agent can parse the URL from stdout and present it to the user
-- 5-minute timeout gives enough time for the user to act
-- SSH key is auto-discovered or generated
-
-**Fallback options** (if `--no-browser` is unavailable):
+**Fallback options** (if `--no-browser` is unavailable or user already has an API key):
 
 ```bash
-# Option 1: Write config file directly (requires user to provide API key)
-mkdir -p ~/.lium
-cat > ~/.lium/config.ini << 'EOF'
-[api]
-api_key = YOUR_API_KEY
-
-[ssh]
-key_path = /path/to/ssh/private/key
-EOF
-
-# Option 2: Use lium config set
+# Option 1: Direct config
 lium config set api.api_key YOUR_API_KEY
 lium config set ssh.key_path ~/.ssh/id_ed25519
 
-# Option 3: Environment variable (session only)
+# Option 2: Environment variable (session only)
 export LIUM_API_KEY=YOUR_API_KEY
 ```
 
@@ -133,6 +122,25 @@ lium fund -w default -a 10.0 -y   # fund 10 TAO, skip confirmation
 User must have a verified Bittensor wallet at https://lium.io/billing.
 
 ### Agent Gotchas / Known Pitfalls
+
+#### After Install — Export PATH
+
+```bash
+export PATH="$HOME/.lium/bin:$PATH"  # needed in current shell session
+```
+
+#### After `lium init --session` — Verify with `lium ls`
+
+After completing the two-step auth, run `lium ls` to verify. If it returns results, auth is done.
+
+#### `lium ps` Has No `--format json`
+
+```bash
+lium ps --format json  # Error: No such option
+lium ps                # correct
+```
+
+Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting — not a numeric index.
 
 #### Commands Without -y Flag
 
@@ -177,8 +185,7 @@ lium templates pytorch         # search templates
 
 ```bash
 lium up --gpu H100 -y          # create pod
-lium ps                        # list active pods
-lium ps --format json          # machine-parseable
+lium ps                        # list active pods (no --format json support)
 lium ssh my-pod                # SSH into pod
 lium exec my-pod "nvidia-smi"  # run command
 lium exec all "pip install torch"  # batch exec on all pods
@@ -205,8 +212,9 @@ Always use `--format json` when parsing output programmatically:
 
 ```bash
 lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
-lium ps --format json
 ```
+
+Note: `lium ps` does NOT support `--format json`.
 
 ## End-to-End Agent Workflow
 
@@ -219,8 +227,11 @@ if ! command -v lium >/dev/null 2>&1; then
   export PATH="$HOME/.lium/bin:$PATH"
 fi
 
-# 2. Initialize (prints auth URL — show it to the user to approve)
+# 2. Authenticate (two-step headless flow)
 lium init --no-browser
+# → parse URL and session ID from output, show URL to user
+# → wait for user to confirm they approved
+lium init --session <SESSION_ID>
 
 # 3. Verify
 lium ls >/dev/null 2>&1 && echo "OK" || echo "Auth failed"
@@ -231,8 +242,8 @@ lium ls --gpu H100 --sort download
 # 5. Create pod (non-interactive!)
 lium up --gpu H100 --name work-pod --ttl 6h -y
 
-# 6. Wait and verify
-lium ps --format json
+# 6. Wait and verify (note: --format json is NOT supported for lium ps)
+lium ps
 
 # 7. Use the pod
 lium scp work-pod ./code.py
