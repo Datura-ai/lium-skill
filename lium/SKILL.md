@@ -22,13 +22,14 @@ curl -fsSL http://16.171.54.255/lium/install.sh | bash
 
 This auto-detects OS (Linux/macOS) and architecture, downloads the binary to `~/.lium/bin/lium`, and adds it to PATH.
 
-After install, initialize with your API key:
+After install, initialize authentication:
 
 ```bash
-lium init
+lium init --no-browser
 ```
 
-`lium init` will prompt for your API key. Register at https://lium.io and get the key from Account Settings.
+This prints an auth URL — open it in a browser, approve access, and the CLI receives the API key automatically.
+If running interactively with a browser available, plain `lium init` opens the URL automatically.
 
 Verify setup:
 
@@ -51,12 +52,31 @@ pip install lium.io
 
 **CRITICAL**: Many lium commands are interactive by default. As an agent, always pass all parameters explicitly to avoid interactive prompts.
 
-### Non-Interactive Setup (instead of `lium init`)
+### Authentication Setup for Agents
 
-`lium init` is fully interactive — do NOT use it from an agent. Instead, configure directly:
+**Preferred: `lium init --no-browser`** (no API key needed upfront):
 
 ```bash
-# Option 1: Write config file directly
+lium init --no-browser
+```
+
+How it works:
+1. CLI calls `POST /api/cli-auth/init` and receives a unique auth URL
+2. CLI prints the URL to stdout — show it to the user and ask them to open it in a browser
+3. CLI polls the backend for approval (timeout: 5 minutes)
+4. Once the user approves in the browser, the CLI automatically receives the API key
+5. API key and SSH key path are saved to `~/.lium/config.ini`
+
+This is the best option for agents because:
+- No need to ask the user for their API key — they just click a link
+- The agent can parse the URL from stdout and present it to the user
+- 5-minute timeout gives enough time for the user to act
+- SSH key is auto-discovered or generated
+
+**Fallback options** (if `--no-browser` is unavailable):
+
+```bash
+# Option 1: Write config file directly (requires user to provide API key)
 mkdir -p ~/.lium
 cat > ~/.lium/config.ini << 'EOF'
 [api]
@@ -74,7 +94,7 @@ lium config set ssh.key_path ~/.ssh/id_ed25519
 export LIUM_API_KEY=YOUR_API_KEY
 ```
 
-The user must register at https://lium.io and get an API key from Account Settings. Ask the user for their API key if not configured.
+For fallback options, the user must get an API key from https://lium.io Account Settings.
 
 ### Verify Setup
 
@@ -199,8 +219,8 @@ if ! command -v lium >/dev/null 2>&1; then
   export PATH="$HOME/.lium/bin:$PATH"
 fi
 
-# 2. Initialize (interactive — ask user to run this and paste their API key)
-lium init
+# 2. Initialize (prints auth URL — show it to the user to approve)
+lium init --no-browser
 
 # 3. Verify
 lium ls >/dev/null 2>&1 && echo "OK" || echo "Auth failed"
