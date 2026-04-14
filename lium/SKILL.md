@@ -164,6 +164,78 @@ echo "y" | lium rm -a      # remove all pods non-interactively
 
 lium CLI has no `whoami` command. To verify auth works, use `lium ls` — if it returns results, auth is OK.
 
+#### Long-Running Commands Over SSH
+
+`lium exec` runs commands in the foreground over SSH. Commands longer than ~30-60s (e.g. `pip install vllm`, `huggingface-cli download`) may be killed by SSH drop. Wrap with `nohup` + log redirect and poll the log:
+
+```bash
+# Start long command in background, detached from SSH session
+# (the \$ escapes for the local shell; the remote sees literal $! which expands to the backgrounded bash PID)
+lium exec my-pod "nohup bash -c 'pip install vllm' </dev/null >/tmp/install.log 2>&1 & echo PID=\$!"
+
+# Watch progress
+lium exec my-pod "tail -f /tmp/install.log"
+# or stream via the logs endpoint if the command writes to stdout of PID 1
+lium logs my-pod --follow
+```
+
+For fully-detached execution (survives SSH session close, stays running after `lium exec` returns):
+
+```bash
+lium exec my-pod "setsid nohup <cmd> </dev/null >/tmp/out.log 2>&1 &"
+```
+
+#### PEP 668 on Default PyTorch Template
+
+The default `daturaai/pytorch` image is based on Ubuntu 24.04 where system `pip` is PEP 668 protected (`externally-managed-environment`). Use one of:
+
+```bash
+# Option 1: allow system-wide install
+pip install --break-system-packages <pkg>
+
+# Option 2: venv (recommended for isolation)
+python -m venv /opt/env && source /opt/env/bin/activate && pip install <pkg>
+
+# Option 3: uv (fast, handles isolation automatically)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv pip install --system <pkg>
+```
+
+#### Missing System Libraries in Base Image
+
+The default GPU base image does not include: `jq`, `htop`, `tmux`, `screen`, `libnuma1`, `git-lfs`, `rsync`. If your workload needs them:
+
+```bash
+lium exec my-pod "apt-get update && apt-get install -y libnuma1 jq tmux git-lfs"
+```
+
+Note: `libnuma1` is required by `sglang`'s `sgl_kernel` and some `vllm` configs — missing it causes cryptic "kernel not found" errors that actually mean the `.so` failed to load.
+
+#### Cold-Start Expectations
+
+Don't assume a pod is broken if it's quiet for several minutes after launch. Typical timings:
+
+- Pod provisioning + SSH ready: ~30-60s
+- Docker image pull: usually cached, ~0-30s
+- Package installs (`pip install vllm`): ~2-5 min
+- Model download from HuggingFace (4B-class): ~1-2 min; (70B+): ~5-10 min
+- vLLM engine init (4B model, single GPU): ~2-3 min
+- sglang + 70B+ sharded (CUDA graph capture of ~50 graphs): **15-25 min**
+
+Use `lium logs my-pod --follow` to watch progress, or poll a log file from `lium exec`.
+
+#### Pod Vanishes from `lium ps`
+
+Pods with internal status `DELETING` are filtered out of `lium ps`. `FAILED` pods remain visible (with `FAILED` status) — so if a pod was `RUNNING` and fully disappears, it's being deleted, not failing. To investigate:
+
+- Check the dashboard (https://lium.io) — it shows full history including deleted pods
+- Grab logs before the pod vanishes: `lium logs <name>` (while it still exists)
+- Known issue: the CLI does not currently surface a deletion reason. If reproducible, report to the platform team.
+
+#### "Executor Not Found" on `lium up <id>`
+
+If an executor is visible on the lium.io dashboard but `lium up <executor_id>` or `lium ls` doesn't show it, the platform's availability filter rejected it. Reasons include: low free disk space, high disk utilization, unresponsive health checks, or missing verification. **`lium ls` is the source of truth for rentable machines** — prefer filtering/selecting from `lium ls` output rather than matching IDs from the website.
+
 ## CLI Quick Reference
 
 ### Discovery
@@ -192,6 +264,18 @@ lium exec all "pip install torch"  # batch exec on all pods
 lium rm my-pod                 # stop pod
 lium rm all                    # stop all pods
 ```
+
+### Streaming Pod Logs
+
+```bash
+lium logs my-pod               # snapshot of current stdout/stderr
+lium logs my-pod --follow      # stream logs live (Ctrl-C to stop)
+```
+
+Streams the **Docker container's PID 1 stdout/stderr** from the executor. Works for both image-mode and SSH-mode pods. Caveats:
+
+- Right after `lium up`, the endpoint may return 404 ("Pod container not deployed yet") for a few seconds — retry.
+- For SSH-mode pods, processes you start manually via `lium exec` are NOT PID 1, so their output won't appear here unless you redirect to `/proc/1/fd/1` (e.g. `my_server > /proc/1/fd/1 2>&1`) or tail your log files via `lium exec my-pod "tail -f /tmp/out.log"`.
 
 ### File Transfer
 
