@@ -226,20 +226,11 @@ Use `lium logs my-pod --follow` to watch progress, or poll a log file from `lium
 
 #### Verify HuggingFace Model Exists Before Deploy
 
-Before spinning up a pod for a specific model (e.g. `vllm serve <repo>`), confirm the `repo_id` exists on HuggingFace — typos (`qwen3.5-4b` vs `Qwen/Qwen3-4B`) waste a full cold-start cycle. Quick checks without extra deps:
+Before spinning up a pod for a specific model (e.g. `vllm serve <repo>`), confirm the `repo_id` exists on HuggingFace — typos like `qwen3.5-4b` (doesn't exist) vs `Qwen/Qwen3-4B` waste a full cold-start cycle.
 
 ```bash
-# Search by keyword — returns top matches as JSON
 curl -s "https://huggingface.co/api/models?search=qwen+2.5+7b&limit=10" | jq -r '.[].id'
-
-# Verify an exact repo_id exists (200 = OK, 401 = gated, 404 = wrong name)
-curl -sI "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct" | head -1
-
-# Fetch model metadata (pipeline_tag, library_name, gated flag)
-curl -s "https://huggingface.co/api/models/Qwen/Qwen2.5-7B-Instruct" | jq '{id, gated, pipeline_tag, library_name}'
 ```
-
-Run these locally (or inside the pod) before `lium exec my-pod "vllm serve <repo>"` to catch bad names, gated-repo 401s, and missing tokenizers early.
 
 #### Pod Vanishes from `lium ps`
 
