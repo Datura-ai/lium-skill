@@ -232,6 +232,16 @@ Pods with internal status `DELETING` are filtered out of `lium ps`. `FAILED` pod
 - Grab logs before the pod vanishes: `lium logs <name>` (while it still exists)
 - Known issue: the CLI does not currently surface a deletion reason. If reproducible, report to the platform team.
 
+#### Pod Creation Failures — 3-Minute Visibility Window
+
+When `lium up` fails during provisioning, the pod is kept in status `CREATION_FAILED` for ~3 minutes before being auto-cleaned up (with a 10-min safety net if the cleanup task is delayed). During this window:
+
+- `lium ps` will show the pod with status `CREATION_FAILED`
+- `lium logs <name>` may have partial output from the failed creation
+- After ~3 minutes the pod disappears — if your agent polled later, it will see no trace
+
+For reliable failure diagnosis, poll `lium ps` every ~10-30s for the first few minutes after `lium up`, or check both `RUNNING` and terminal failure states explicitly.
+
 #### "Executor Not Found" on `lium up <id>`
 
 If an executor is visible on the lium.io dashboard but `lium up <executor_id>` or `lium ls` doesn't show it, the platform's availability filter rejected it. Reasons include: low free disk space, high disk utilization, unresponsive health checks, or missing verification. **`lium ls` is the source of truth for rentable machines** — prefer filtering/selecting from `lium ls` output rather than matching IDs from the website.
