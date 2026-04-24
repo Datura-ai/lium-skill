@@ -357,5 +357,5 @@ echo "y" | lium rm work-pod
 
 ## Detailed References
 
-- **Full CLI command reference**: https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md — all commands, flags, volumes, backups, scheduling, port-forward, etc.
-- **Python SDK reference**: https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md — programmatic access via `lium.sdk.Lium`, `lium.Client`, `@machine` decorator, async patterns.
+- **Full CLI command reference**: [references/cli-commands.md](references/cli-commands.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md) — all commands, flags, volumes, backups, scheduling, port-forward, etc.
+- **Python SDK reference**: [references/sdk-reference.md](references/sdk-reference.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md) — programmatic access via `lium.sdk.Lium`, `lium.Client`, `@machine` decorator, async patterns.

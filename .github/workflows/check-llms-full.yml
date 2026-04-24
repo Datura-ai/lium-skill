@@ -1,0 +1,30 @@
+name: Check llms-full.txt is up to date
+
+on:
+  pull_request:
+    paths:
+      - 'lium/SKILL.md'
+      - 'lium/references/**'
+      - 'scripts/build-llms-full.sh'
+      - 'llms-full.txt'
+      - '.github/workflows/check-llms-full.yml'
+  push:
+    branches: [main]
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate llms-full.txt
+        run: ./scripts/build-llms-full.sh /tmp/llms-full.generated.txt
+
+      - name: Diff against committed llms-full.txt
+        run: |
+          if ! diff -u llms-full.txt /tmp/llms-full.generated.txt; then
+            echo "::error::llms-full.txt is out of sync with SKILL.md / references."
+            echo "Run ./scripts/build-llms-full.sh locally and commit the result."
+            exit 1
+          fi
+          echo "llms-full.txt is up to date."

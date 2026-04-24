@@ -31,12 +31,14 @@ strip_frontmatter() {
   ' "$1"
 }
 
-# Drop the trailing "## Detailed References" section (external links) —
-# references are inlined below instead.
+# Drop only the "## Detailed References" section (external links) —
+# references are inlined below instead. Resumes printing at the next ^## heading
+# so any future sections appended after it are preserved.
 strip_detailed_references_section() {
   awk '
-    /^## Detailed References[[:space:]]*$/ { stop = 1 }
-    !stop { print }
+    /^## Detailed References[[:space:]]*$/ { skip = 1; next }
+    skip && /^## / { skip = 0 }
+    !skip { print }
   ' /dev/stdin
 }
 
