@@ -17,7 +17,7 @@ Lium — decentralized GPU rental platform on Bittensor. Pods are Docker contain
 Standalone binary — no Python or dependencies required:
 
 ```bash
-curl -fsSL http://16.171.54.255/lium/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh | bash
 ```
 
 This auto-detects OS (Linux/macOS) and architecture, downloads the binary to `~/.lium/bin/lium`, and adds it to PATH.
@@ -325,7 +325,7 @@ Complete flow for setting up and renting a GPU pod:
 ```bash
 # 1. Install lium (if not present)
 if ! command -v lium >/dev/null 2>&1; then
-  curl -fsSL http://16.171.54.255/lium/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh | bash
   export PATH="$HOME/.lium/bin:$PATH"
 fi
 
@@ -357,5 +357,5 @@ echo "y" | lium rm work-pod
 
 ## Detailed References
 
-- **Full CLI command reference**: See [references/cli-commands.md](references/cli-commands.md) for all commands, flags, volumes, backups, scheduling, port-forward, etc.
-- **Python SDK reference**: See [references/sdk-reference.md](references/sdk-reference.md) for programmatic access — `lium.sdk.Lium`, `lium.Client`, `@machine` decorator, async patterns.
+- **Full CLI command reference**: [references/cli-commands.md](references/cli-commands.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md) — all commands, flags, volumes, backups, scheduling, port-forward, etc.
+- **Python SDK reference**: [references/sdk-reference.md](references/sdk-reference.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md) — programmatic access via `lium.sdk.Lium`, `lium.Client`, `@machine` decorator, async patterns.
