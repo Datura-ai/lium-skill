@@ -1,0 +1,1088 @@
+# Lium — Full Reference for Agents
+
+Self-contained reference for AI agents. Includes skill overview, CLI command reference, and Python SDK reference.
+Source of truth: https://github.com/Datura-ai/lium-skill
+
+---
+
+
+# Lium CLI & SDK
+
+Lium — decentralized GPU rental platform on Bittensor. Pods are Docker containers with root SSH access and direct GPU passthrough.
+
+- **GitHub**: https://github.com/Datura-ai/lium
+- **PyPI**: https://pypi.org/project/lium.io/
+- **Docs**: https://docs.lium.io
+- **Dashboard**: https://lium.io
+
+## Quick Install
+
+Standalone binary — no Python or dependencies required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh | bash
+```
+
+This auto-detects OS (Linux/macOS) and architecture, downloads the binary to `~/.lium/bin/lium`, and adds it to PATH.
+
+After install, initialize authentication:
+
+```bash
+lium init              # opens browser automatically
+lium init --no-browser  # prints auth URL (for headless/agent use)
+```
+
+Verify setup:
+
+```bash
+lium ls   # if this works, auth is OK
+```
+
+### Alternative Install (via pip/uv)
+
+```bash
+# Via uv (isolated env)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install lium.io
+
+# Via pip
+pip install lium.io
+```
+
+## Agent-Specific: Non-Interactive Usage
+
+**CRITICAL**: Many lium commands are interactive by default. As an agent, always pass all parameters explicitly to avoid interactive prompts.
+
+### Authentication Setup for Agents
+
+**Preferred: two-step headless auth** — no API key needed, no blocking, no browser:
+
+1. Run `lium init --no-browser` — get auth URL and session ID (exits immediately)
+2. Show the URL to the user, ask them to open it and click Approve
+3. Wait for user to confirm they approved
+4. Run `lium init --session <SESSION_ID>` — saves API key + sets up SSH
+
+```bash
+lium init --no-browser
+# [i] Open this URL to authenticate:
+#     https://lium.io/cli/approve/xJinnT3Vt6...
+# [i] Then complete authentication with:
+#     lium init --session abc123def456
+
+# ... user confirms they approved ...
+
+lium init --session abc123def456
+# [✓] API key saved
+```
+
+**Fallback options** (if `--no-browser` is unavailable or user already has an API key):
+
+```bash
+# Option 1: Direct config
+lium config set api.api_key YOUR_API_KEY
+lium config set ssh.key_path ~/.ssh/id_ed25519
+
+# Option 2: Environment variable (session only)
+export LIUM_API_KEY=YOUR_API_KEY
+```
+
+For fallback options, the user must get an API key from https://lium.io Account Settings.
+
+### Verify Setup
+
+```bash
+lium config show   # check stored config
+lium ls            # if this works, auth is OK
+```
+
+### Non-Interactive Pod Creation
+
+Always use `-y` flag and pass all parameters:
+
+```bash
+# WRONG (interactive):
+lium up              # prompts for executor and template selection
+lium up 1            # prompts for template selection
+
+# RIGHT (non-interactive):
+lium up --gpu H100 -y                        # auto-selects executor + default template
+lium up --gpu A100 -c 2 --country US -y      # with filters
+lium up --gpu H100 --name my-pod --ttl 6h -y # with name and auto-termination
+lium up --gpu A6000 --image pytorch/pytorch:2.0 -y  # custom docker image
+lium up --gpu H100 --jupyter -y              # with Jupyter
+```
+
+### Non-Interactive Funding
+
+```bash
+# WRONG (interactive):
+lium fund
+
+# RIGHT:
+lium fund -w default -a 10.0 -y   # fund 10 TAO, skip confirmation
+```
+
+User must have a verified Bittensor wallet at https://lium.io/billing.
+
+### Agent Gotchas / Known Pitfalls
+
+#### After Install — Export PATH
+
+```bash
+export PATH="$HOME/.lium/bin:$PATH"  # needed in current shell session
+```
+
+#### After `lium init --session` — Verify with `lium ls`
+
+After completing the two-step auth, run `lium ls` to verify. If it returns results, auth is done.
+
+#### `lium ps` Has No `--format json`
+
+```bash
+lium ps --format json  # Error: No such option
+lium ps                # correct
+```
+
+Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting — not a numeric index.
+
+#### Commands Without -y Flag
+
+Not all commands support `-y`. Workaround for interactive commands:
+
+```bash
+lium rm my-pod         # will prompt for confirmation
+echo "y" | lium rm my-pod  # workaround for agent use
+echo "y" | lium rm -a      # remove all pods non-interactively
+```
+
+#### Templates
+
+- Without `--template_id` or `--image`, `lium up` uses default **PyTorch (CUDA)** template — fastest to start
+- Default Docker-in-Docker (dind) template image: `daturaai/dind`
+- Search templates: `lium templates pytorch` (text search, no --format json)
+- To use specific template: `lium up --gpu H100 -t <TEMPLATE_ID> -y`
+- To use custom Docker image: `lium up --gpu H100 --image pytorch/pytorch:2.0 -y`
+
+#### No User Identity Command
+
+lium CLI has no `whoami` command. To verify auth works, use `lium ls` — if it returns results, auth is OK.
+
+#### Long-Running Commands Over SSH
+
+`lium exec` runs commands in the foreground over SSH. Commands longer than ~30-60s (e.g. `pip install vllm`, `huggingface-cli download`) may be killed by SSH drop. Wrap with `nohup` + log redirect and poll the log:
+
+```bash
+# Start long command in background, detached from SSH session
+# (the \$ escapes for the local shell; the remote sees literal $! which expands to the backgrounded bash PID)
+lium exec my-pod "nohup bash -c 'pip install vllm' </dev/null >/tmp/install.log 2>&1 & echo PID=\$!"
+
+# Watch progress
+lium exec my-pod "tail -f /tmp/install.log"
+# or stream via the logs endpoint if the command writes to stdout of PID 1
+lium logs my-pod --follow
+```
+
+For fully-detached execution (survives SSH session close, stays running after `lium exec` returns):
+
+```bash
+lium exec my-pod "setsid nohup <cmd> </dev/null >/tmp/out.log 2>&1 &"
+```
+
+#### PEP 668 on Default PyTorch Template
+
+The default `daturaai/pytorch` image is based on Ubuntu 24.04 where system `pip` is PEP 668 protected (`externally-managed-environment`). Use one of:
+
+```bash
+# Option 1: allow system-wide install
+pip install --break-system-packages <pkg>
+
+# Option 2: venv (recommended for isolation)
+python -m venv /opt/env && source /opt/env/bin/activate && pip install <pkg>
+
+# Option 3: uv (fast, handles isolation automatically)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv pip install --system <pkg>
+```
+
+#### Missing System Libraries in Base Image
+
+The default GPU base image does not include: `jq`, `htop`, `tmux`, `screen`, `libnuma1`, `git-lfs`, `rsync`. If your workload needs them:
+
+```bash
+lium exec my-pod "apt-get update && apt-get install -y libnuma1 jq tmux git-lfs"
+```
+
+Note: `libnuma1` is required by `sglang`'s `sgl_kernel` and some `vllm` configs — missing it causes cryptic "kernel not found" errors that actually mean the `.so` failed to load.
+
+#### Cold-Start Expectations
+
+Don't assume a pod is broken if it's quiet for several minutes after launch. Typical timings:
+
+- Pod provisioning + SSH ready: ~30-60s
+- Docker image pull: usually cached, ~0-30s
+- Package installs (`pip install vllm`): ~2-5 min
+- Model download from HuggingFace (4B-class): ~1-2 min; (70B+): ~5-10 min
+- vLLM engine init (4B model, single GPU): ~2-3 min
+- sglang + 70B+ sharded (CUDA graph capture of ~50 graphs): **15-25 min**
+
+Use `lium logs my-pod --follow` to watch progress, or poll a log file from `lium exec`.
+
+#### Verify HuggingFace Model Exists Before Deploy
+
+Before spinning up a pod for a specific model (e.g. `vllm serve <repo>`), confirm the `repo_id` exists on HuggingFace — typos like `qwen3.5-4b` (doesn't exist) vs `Qwen/Qwen3-4B` waste a full cold-start cycle.
+
+```bash
+curl -s "https://huggingface.co/api/models?search=qwen+2.5+7b&limit=10" | jq -r '.[].id'
+```
+
+#### Pod Vanishes from `lium ps`
+
+Pods with internal status `DELETING` are filtered out of `lium ps`. `FAILED` pods remain visible (with `FAILED` status) — so if a pod was `RUNNING` and fully disappears, it's being deleted, not failing. To investigate:
+
+- Check the dashboard (https://lium.io) — it shows full history including deleted pods
+- Grab logs before the pod vanishes: `lium logs <name>` (while it still exists)
+- Known issue: the CLI does not currently surface a deletion reason. If reproducible, report to the platform team.
+
+#### Pod Creation Failures — 3-Minute Visibility Window
+
+When `lium up` fails during provisioning, the pod is kept in status `CREATION_FAILED` for ~3 minutes before being auto-cleaned up (with a 10-min safety net if the cleanup task is delayed). During this window:
+
+- `lium ps` will show the pod with status `CREATION_FAILED`
+- `lium logs <name>` may have partial output from the failed creation
+- After ~3 minutes the pod disappears — if your agent polled later, it will see no trace
+
+For reliable failure diagnosis, poll `lium ps` every ~10-30s for the first few minutes after `lium up`, or check both `RUNNING` and terminal failure states explicitly.
+
+#### "Executor Not Found" on `lium up <id>`
+
+If an executor is visible on the lium.io dashboard but `lium up <executor_id>` or `lium ls` doesn't show it, the platform's availability filter rejected it. Reasons include: low free disk space, high disk utilization, unresponsive health checks, or missing verification. **`lium ls` is the source of truth for rentable machines** — prefer filtering/selecting from `lium ls` output rather than matching IDs from the website.
+
+## CLI Quick Reference
+
+### Discovery
+
+```bash
+lium ls                        # all available GPUs (shows table with ★ for best price/perf)
+lium ls H100                   # filter by type
+lium ls --sort download        # sort by download speed (fastest first) — preferred default
+lium ls --sort upload          # sort by upload speed
+lium ls --sort price_gpu       # sort by price per GPU/hour (default)
+lium ls --format json          # machine-parseable output
+lium templates                 # list Docker templates
+lium templates pytorch         # search templates
+```
+
+**Recommendation**: When selecting machines for the user, prefer `--sort download` to get the fastest network unless the user specifically asks to sort by price or other criteria.
+
+### Pod Lifecycle
+
+```bash
+lium up --gpu H100 -y          # create pod
+lium ps                        # list active pods (no --format json support)
+lium ssh my-pod                # SSH into pod
+lium exec my-pod "nvidia-smi"  # run command
+lium exec all "pip install torch"  # batch exec on all pods
+lium rm my-pod                 # stop pod
+lium rm all                    # stop all pods
+```
+
+### Streaming Pod Logs
+
+```bash
+lium logs my-pod               # snapshot of current stdout/stderr
+lium logs my-pod --follow      # stream logs live (Ctrl-C to stop)
+```
+
+Streams the **Docker container's PID 1 stdout/stderr** from the executor. Works for both image-mode and SSH-mode pods. Caveats:
+
+- Right after `lium up`, the endpoint may return 404 ("Pod container not deployed yet") for a few seconds — retry.
+- For SSH-mode pods, processes you start manually via `lium exec` are NOT PID 1, so their output won't appear here unless you redirect to `/proc/1/fd/1` (e.g. `my_server > /proc/1/fd/1 2>&1`) or tail your log files via `lium exec my-pod "tail -f /tmp/out.log"`.
+
+### File Transfer
+
+```bash
+lium scp my-pod ./train.py              # upload to /root/
+lium scp my-pod ./data.csv /root/data/  # specific path
+lium scp all ./config.json              # upload to all pods
+lium rsync my-pod ./project             # sync directory
+```
+
+### Pod Targeting
+
+Pods accept: name, index from `lium ps`, comma-separated (`1,2,3`), or `all`.
+
+### Output Formats
+
+Always use `--format json` when parsing output programmatically:
+
+```bash
+lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
+```
+
+Note: `lium ps` does NOT support `--format json`.
+
+## End-to-End Agent Workflow
+
+Complete flow for setting up and renting a GPU pod:
+
+```bash
+# 1. Install lium (if not present)
+if ! command -v lium >/dev/null 2>&1; then
+  curl -fsSL https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh | bash
+  export PATH="$HOME/.lium/bin:$PATH"
+fi
+
+# 2. Authenticate (two-step headless flow)
+lium init --no-browser
+# → parse URL and session ID from output, show URL to user
+# → wait for user to confirm they approved
+lium init --session <SESSION_ID>
+
+# 3. Verify
+lium ls >/dev/null 2>&1 && echo "OK" || echo "Auth failed"
+
+# 4. Find suitable GPU (sort by speed by default)
+lium ls --gpu H100 --sort download
+
+# 5. Create pod (non-interactive!)
+lium up --gpu H100 --name work-pod --ttl 6h -y
+
+# 6. Wait and verify (note: --format json is NOT supported for lium ps)
+lium ps
+
+# 7. Use the pod
+lium scp work-pod ./code.py
+lium exec work-pod "python /root/code.py"
+
+# 8. Cleanup
+echo "y" | lium rm work-pod
+```
+
+
+---
+
+# CLI Commands — Full Reference
+
+# Lium CLI Command Reference
+
+## Table of Contents
+
+- [Global Options](#global-options)
+- [lium init](#lium-init)
+- [lium ls](#lium-ls)
+- [lium up](#lium-up)
+- [lium ps](#lium-ps)
+- [lium ssh](#lium-ssh)
+- [lium exec](#lium-exec)
+- [lium scp](#lium-scp)
+- [lium rsync](#lium-rsync)
+- [lium rm](#lium-rm)
+- [lium templates](#lium-templates)
+- [lium fund](#lium-fund)
+- [lium config](#lium-config)
+- [lium logs](#lium-logs)
+- [lium port-forward](#lium-port-forward)
+- [lium reboot](#lium-reboot)
+- [lium volumes](#lium-volumes)
+- [lium bk (backups)](#lium-bk-backups)
+- [lium schedules](#lium-schedules)
+- [lium theme](#lium-theme)
+- [Batch Operations](#batch-operations)
+- [Pod Targeting](#pod-targeting)
+- [Environment Variables](#environment-variables)
+- [Exit Codes](#exit-codes)
+
+## Global Options
+
+```
+--help        Show help message
+--version     Display CLI version
+--config PATH Use alternate config file
+--debug       Enable debug output
+```
+
+## lium init
+
+Interactive setup wizard. **NOT suitable for agent/scripted use** — has no non-interactive flags.
+
+For agent setup, write config directly:
+```bash
+mkdir -p ~/.lium
+lium config set api.api_key YOUR_KEY
+lium config set ssh.key_path ~/.ssh/id_ed25519
+```
+
+## lium ls
+
+List available GPU nodes.
+
+```bash
+lium ls [GPU_TYPE] [OPTIONS]
+  GPU_TYPE          Filter by GPU type (H100, A100, RTX4090, H200, etc.)
+  --region REGION   Filter by region
+  --min-memory GB   Minimum GPU memory
+  --max-price USD   Maximum price per hour
+  --format FORMAT   Output format (table, json, csv)
+```
+
+Examples:
+```bash
+lium ls                    # all nodes
+lium ls H100              # only H100 GPUs
+lium ls --max-price 2.5   # under $2.50/hour
+lium ls --format json     # JSON output for parsing
+```
+
+## lium up
+
+Create a new pod. **Always use `-y` flag for non-interactive (agent) usage.**
+
+```bash
+lium up [EXECUTOR_ID] [OPTIONS]
+  EXECUTOR_ID                 Executor UUID, HUID, or index from last lium ls
+  -n, --name NAME             Custom pod name
+  -t, --template_id ID        Template ID
+  -v, --volume SPEC           Volume: id:<HUID> or new:name=<NAME>[,desc=<DESC>]
+  -y, --yes                   Skip confirmation (REQUIRED for agent use)
+  --gpu TYPE                  Filter by GPU type (H200, A6000, etc.)
+  -c, --count NUM             Filter by GPU count per pod
+  --country CODE              Filter by ISO country code (US, FR, etc.)
+  -p, --ports NUM             Require ≥NUM ports AND allocate NUM ports
+  --ttl DURATION              Auto-terminate after duration (6h, 45m, 2d)
+  --until TIME                Auto-terminate at time ("today 23:00", "tomorrow 01:00")
+  --jupyter                   Install Jupyter Notebook (auto-selects port)
+  --image IMAGE               Docker image (e.g., pytorch/pytorch:2.0)
+  -e, --env KEY=VALUE         Environment variables (repeatable)
+  --cmd TEXT                  Command to run in container
+  --entrypoint TEXT           Container entrypoint
+  --internal-ports TEXT       Internal ports to expose (comma-separated)
+```
+
+Examples:
+```bash
+# Non-interactive (for agents):
+lium up --gpu H100 -y                            # auto-select + default template
+lium up --gpu H200 --country US --name train -y  # with filters
+lium up --gpu H100 --ttl 6h --jupyter -y         # with TTL + Jupyter
+
+# Docker-run style (streams logs instead of SSH):
+lium up --gpu A4000 --image pytorch/pytorch:2.0 -y
+lium up --gpu H100 --image vllm/vllm-openai:latest -e HF_TOKEN=xxx -y
+
+# With volumes:
+lium up --gpu H100 -v id:brave-fox-3a -y         # attach existing volume
+lium up --gpu H100 -v new:name=data -y           # create + attach volume
+
+# Specific executor:
+lium up 1 --name dev-pod -y                      # executor #1 from last ls
+```
+
+## lium ps
+
+List active pods.
+
+```bash
+lium ps [OPTIONS]
+  -a, --all         Show all pods including stopped
+  --format FORMAT   Output format (table, json, csv)
+  --sort FIELD      Sort by field (name, status, cost, uptime)
+```
+
+## lium ssh
+
+SSH into a pod.
+
+```bash
+lium ssh POD [OPTIONS]
+  POD               Pod name or index from lium ps
+  --command CMD     Execute command and exit
+  --port PORT       SSH port (default: 22)
+  --key PATH        Use specific SSH key
+```
+
+## lium exec
+
+Execute command on pod(s).
+
+```bash
+lium exec POD COMMAND [OPTIONS]
+  POD               Pod name, index, comma-separated list, or "all"
+  COMMAND           Command to execute (quote multi-word commands)
+  --timeout SECONDS Command timeout
+  --output FILE     Save output to file
+```
+
+Examples:
+```bash
+lium exec my-pod "python train.py"
+lium exec 1 "nvidia-smi" --output gpu.txt
+lium exec all "pip install numpy"
+```
+
+## lium scp
+
+Copy files to/from pods.
+
+```bash
+lium scp POD LOCAL_FILE [REMOTE_PATH] [OPTIONS]
+  POD               Pod name, index, comma-separated list, or "all"
+  LOCAL_FILE        Local file to copy
+  REMOTE_PATH       Destination path (default: /root/)
+  -r, --recursive   Copy directories recursively
+  -p, --preserve    Preserve file attributes
+  -d                Download mode (pod → local)
+```
+
+Examples:
+```bash
+lium scp my-pod ./script.py                 # upload to /root/
+lium scp 1 ./data.csv /root/datasets/       # specific destination
+lium scp all ./config.json                  # upload to all pods
+lium scp my-pod ./folder -r                 # directory upload
+```
+
+## lium rsync
+
+Synchronize directories to pods.
+
+```bash
+lium rsync POD LOCAL_DIR [REMOTE_PATH] [OPTIONS]
+  POD               Pod name, index, list, or "all"
+  LOCAL_DIR         Local directory to sync
+  REMOTE_PATH       Destination path
+  --delete          Delete files not in source
+  --exclude PATTERN Exclude files matching pattern
+  --dry-run         Show what would be synced
+```
+
+## lium rm
+
+Remove/stop pods. **No `-y` flag** — use `echo "y" |` for non-interactive usage.
+
+```bash
+lium rm POD [POD...] [OPTIONS]
+  POD               Pod name(s), indices, or "all"
+  -a, --all         Remove all pods
+  --in TEXT          Remove pods matching name pattern
+  --at TEXT          Remove pods on specific executor
+```
+
+**Agent usage** (non-interactive):
+```bash
+echo "y" | lium rm my-pod       # single pod
+echo "y" | lium rm -a           # all pods
+echo "y" | lium rm 1,2,3        # multiple by index
+```
+
+## lium templates
+
+List available Docker templates. No `--format json` support.
+
+```bash
+lium templates [SEARCH]
+  SEARCH            Text search to filter templates (e.g. "pytorch", "tensorflow")
+```
+
+**Notes**:
+- Without `--template_id` in `lium up`, the default **PyTorch (CUDA)** template is used — fastest to start
+- Default Docker-in-Docker (dind) image: `daturaai/dind`
+
+## lium fund
+
+Fund account with TAO from Bittensor wallet. **Always use `-y` for agent use.**
+
+```bash
+lium fund [OPTIONS]
+  -w, --wallet NAME   Wallet name (REQUIRED for non-interactive)
+  -a, --amount AMOUNT Amount of TAO (REQUIRED for non-interactive)
+  -y, --yes           Skip confirmation (REQUIRED for agent use)
+```
+
+## lium config
+
+Manage configuration.
+
+```bash
+lium config show                         # display all config
+lium config get api.api_key             # get specific value
+lium config set ssh.key_path ~/.ssh/key  # set value
+lium config edit                         # open in editor
+```
+
+## lium logs
+
+Stream pod logs.
+
+```bash
+lium logs POD [OPTIONS]
+  -f              Follow log output
+  -n NUM          Number of lines to show
+```
+
+## lium port-forward
+
+Forward local port to pod. Useful for accessing Jupyter, TensorBoard, or other web services.
+
+```bash
+lium port-forward POD PORT [OPTIONS]
+  POD   Pod name or index
+  PORT  Remote port to forward
+```
+
+Examples:
+```bash
+lium port-forward my-pod 8888    # forward Jupyter (localhost:8888)
+lium port-forward 1 6006         # forward TensorBoard
+```
+
+## lium reboot
+
+Reboot a pod.
+
+```bash
+lium reboot POD [OPTIONS]
+  -v, --volume SPEC  Attach volume on reboot
+```
+
+## lium volumes
+
+Manage persistent volumes.
+
+```bash
+lium volumes list                        # list all volumes
+lium volumes new NAME [OPTIONS]          # create volume
+  --desc DESCRIPTION
+lium volumes rm VOLUME                   # delete volume
+```
+
+## lium bk (backups)
+
+Manage pod backups.
+
+```bash
+lium bk show POD              # show backup config
+lium bk set POD PATH          # configure auto-backups
+lium bk now POD               # trigger immediate backup
+lium bk logs POD              # view backup logs
+lium bk restore POD BACKUP_ID # restore from backup
+lium bk rm POD                # remove backup config
+```
+
+## lium schedules
+
+Manage scheduled terminations.
+
+```bash
+lium schedules list            # list scheduled terminations
+lium schedules rm POD          # cancel scheduled termination
+```
+
+## lium theme
+
+Change CLI color theme.
+
+```bash
+lium theme [THEME]   # interactive if no theme specified
+```
+
+Available: default, monokai, solarized, dracula, nord.
+
+## Batch Operations
+
+Many commands support batch operations via comma-separated targets or `all`:
+
+```bash
+lium exec 1,2,3 "apt update"
+lium exec all "nvidia-smi"
+lium scp all ./requirements.txt
+lium rsync all ./project
+```
+
+## Pod Targeting
+
+Pods accept these identifiers:
+- **Name**: `lium ssh my-pod`
+- **Index**: `lium ssh 1` (from `lium ps` output)
+- **Comma list**: `lium exec 1,2,3 "cmd"`
+- **All**: `lium exec all "cmd"`
+
+## Environment Variables
+
+```bash
+LIUM_API_KEY=xyz lium ls       # override API key
+LIUM_SSH_KEY=/tmp/key lium ssh my-pod
+LIUM_DEBUG=1 lium up           # debug output
+```
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Configuration error |
+| 3 | API error |
+| 4 | SSH error |
+| 5 | Pod not found |
+| 6 | Permission denied |
+
+---
+
+# Python SDK — Full Reference
+
+# Lium Python SDK Reference
+
+## Table of Contents
+
+- [Installation & Auth](#installation--auth)
+- [High-Level SDK (lium.sdk.Lium)](#high-level-sdk-liumsdklium)
+- [@machine Decorator](#machine-decorator)
+- [Low-Level SDK (lium.Client)](#low-level-sdk-liumclient)
+- [Models](#models)
+- [Exceptions](#exceptions)
+
+## Installation & Auth
+
+```bash
+pip install lium.io      # CLI + high-level SDK
+pip install lium-sdk     # low-level SDK only
+```
+
+Authentication (auto-loaded in priority order):
+1. Direct: `Lium(api_key="...")` or `Client(api_key="...")`
+2. Environment: `LIUM_API_KEY`
+3. Config file: `~/.lium/config.ini` (set via `lium init`)
+
+SSH keys auto-discovered from `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`, `~/.ssh/id_ecdsa`.
+
+---
+
+## High-Level SDK (lium.sdk.Lium)
+
+Full-featured SDK included with `pip install lium.io`. Mirrors CLI capabilities.
+
+```python
+from lium.sdk import Lium
+lium = Lium()
+```
+
+### Discovery
+
+| Method | Description |
+|--------|-------------|
+| `ls(gpu_type=, gpu_count=, lat=, lon=, max_distance_miles=)` | List available executors |
+| `ps()` | List active pods |
+| `pod(pod_id)` | Get pod details |
+| `get_executor(executor_id)` | Get executor details |
+| `templates(filter=, only_my=)` | List templates |
+| `gpu_types()` | List available GPU types |
+
+### Pod Lifecycle
+
+| Method | Description |
+|--------|-------------|
+| `up(executor_id, name=, template_id=, volume_id=, ports=, ssh_keys=)` | Create pod |
+| `down(pod)` | Stop/delete pod |
+| `rm(pod)` | Alias for `down()` |
+| `reboot(pod, volume_id=)` | Reboot pod |
+| `wait_ready(pod, timeout=)` | Poll until pod is RUNNING |
+| `logs(pod_id, tail=, follow=)` | Stream pod logs |
+| `edit(pod_id, **kwargs)` | Edit pod template |
+
+### Remote Execution
+
+| Method | Description |
+|--------|-------------|
+| `exec(pod, command, env=, timeout=)` | Execute command, returns `{"stdout": ..., "stderr": ...}` |
+| `stream_exec(pod, command, env=)` | Stream execution output |
+| `exec_all(pods, command)` | Execute on multiple pods |
+| `ssh(pod)` | Get SSH command string |
+
+### File Transfer
+
+| Method | Description |
+|--------|-------------|
+| `scp(pod, local, remote)` | Copy file to pod |
+| `upload(pod, local, remote)` | Upload (alias for scp) |
+| `download(pod, remote, local)` | Download file from pod |
+| `rsync(pod, local, remote)` | Sync directory |
+
+### Template Management
+
+| Method | Description |
+|--------|-------------|
+| `default_docker_template(executor_id)` | Get executor's default template |
+| `create_template(...)` | Create custom template |
+| `update_template(template_id, name=, docker_image=, ...)` | Update template |
+| `switch_template(pod, template_id)` | Change pod's template |
+| `wait_template_ready(template_id, timeout=)` | Wait for template build |
+
+### Volume Management
+
+| Method | Description |
+|--------|-------------|
+| `volumes()` | List all volumes |
+| `volume(volume_id)` | Get volume info |
+| `volume_create(name, description=)` | Create volume |
+| `volume_update(volume_id, name=, description=)` | Update volume |
+| `volume_delete(volume_id)` | Delete volume |
+
+### Backup Management
+
+| Method | Description |
+|--------|-------------|
+| `backup_create(pod, path, frequency_hours=, retention_days=, name=)` | Set up auto-backups |
+| `backup_now(pod, name=)` | Trigger immediate backup |
+| `backup_config(pod)` | Get backup config |
+| `backup_list()` | List all backups |
+| `backup_logs(pod)` | Get backup execution logs |
+| `backup_delete(config_id)` | Delete backup config |
+| `restore(pod, backup_id, target_path=)` | Restore from backup |
+
+### Pod Scheduling
+
+| Method | Description |
+|--------|-------------|
+| `schedule_termination(pod, termination_time)` | Auto-terminate at specific time |
+| `cancel_scheduled_termination(pod)` | Cancel auto-termination |
+
+### Jupyter
+
+| Method | Description |
+|--------|-------------|
+| `install_jupyter(pod, jupyter_internal_port=)` | Install Jupyter on pod |
+
+### Account
+
+| Method | Description |
+|--------|-------------|
+| `balance()` | Get account balance |
+| `wallets()` | List connected wallets |
+| `add_wallet(bt_wallet)` | Add Bittensor wallet |
+| `get_my_user_id()` | Get current user ID |
+
+### Complete Example
+
+```python
+from lium.sdk import Lium
+
+lium = Lium()
+
+# Find and create
+executors = lium.ls(gpu_type="A100", gpu_count=8)
+pod = lium.up(executor_id=executors[0].id, name="my-pod")
+pod = lium.wait_ready(pod, timeout=600)
+
+# Execute
+result = lium.exec(pod, command="nvidia-smi")
+print(result["stdout"])
+
+# Files
+lium.upload(pod, local="train.py", remote="/root/train.py")
+lium.exec(pod, "python /root/train.py")
+lium.download(pod, remote="/root/model.pt", local="./model.pt")
+
+# Backups
+lium.backup_create(pod, path="/root/data", frequency_hours=24, retention_days=7)
+
+# Cleanup
+lium.down(pod)
+```
+
+---
+
+## @machine Decorator
+
+Simplest way to run code on a remote GPU. Automatically provisions, uploads, executes, returns result, and cleans up.
+
+```python
+from lium.sdk import machine
+
+@machine(machine="A100", requirements=["torch", "transformers"])
+def train_model(prompt: str) -> str:
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+    model = AutoModelForCausalLM.from_pretrained("gpt2")
+    # ... your code runs on remote A100
+    return result
+
+result = train_model("Your prompt")
+```
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `machine` | str | GPU type: `"A100"`, `"1xH200"`, `"2xA100"` |
+| `template_id` | str, optional | Docker template to use |
+| `cleanup` | bool, default True | Delete pod after execution |
+| `requirements` | list, optional | Pip packages to install before running |
+
+---
+
+## Low-Level SDK (lium.Client)
+
+Resource-based client from `pip install lium-sdk`. Context-manager pattern.
+
+### Sync Client
+
+```python
+import lium
+
+with lium.Client(api_key="optional") as client:
+    pods = client.pods.list()
+```
+
+### Async Client
+
+```python
+import asyncio, lium
+
+async def main():
+    async with lium.AsyncClient() as client:
+        pods = await client.pods.list()
+
+asyncio.run(main())
+```
+
+### Resources
+
+**client.pods:**
+| Method | Description |
+|--------|-------------|
+| `list()` → `list[PodList]` | List user's pods |
+| `retrieve(id, wait_until_running=False, timeout=300)` → `Pod` | Get pod, optionally wait |
+| `create(id_in_site, pod_name, template_id, user_public_key)` → `Pod` | Low-level create |
+| `delete(id_in_site)` → `None` | Delete pod |
+| `list_executors(filter_query=None)` → `list[Executor]` | List available machines |
+| `easy_deploy(machine_query, docker_image=, dockerfile=, template_id=, pod_name=)` → `Pod` | High-level deploy |
+
+**machine_query format for easy_deploy:**
+- `"H100"` — any H100
+- `"1xA6000"` — exactly 1x A6000
+- `"2xA100"` — exactly 2x A100
+- `"H200,A100"` — H200 or A100
+
+**client.templates:**
+| Method | Description |
+|--------|-------------|
+| `list()` → `list[Template]` | List templates |
+| `retrieve(template_id)` → `Template` | Get template |
+| `create(...)` → `Template` | Create template |
+| `delete(template_id)` → `None` | Delete template |
+
+**client.ssh_keys:**
+| Method | Description |
+|--------|-------------|
+| `list()` → `list[SSHKey]` | List uploaded SSH keys |
+| `create(name: str, public_key: str)` → `SSHKey` | Upload public key |
+| `delete(key_id: UUID)` → `None` | Remove SSH key |
+
+**client.docker_credentials:**
+| Method | Description |
+|--------|-------------|
+| `list()` → `list[DockerCredentials]` | List stored registry credentials |
+| `create(registry: str, username: str, password: str)` → `DockerCredentials` | Add registry credentials (for private images) |
+| `delete(cred_id: UUID)` → `None` | Remove credentials |
+
+---
+
+## Models
+
+### ExecutorInfo (high-level SDK)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `UUID` | Executor identifier |
+| `huid` | `str` | Human-readable ID (e.g. "cosmic-hawk-f2") |
+| `gpu_type` | `str` | GPU model ("H100", "A100", etc.) |
+| `gpu_count` | `int` | Number of GPUs |
+| `price_per_hour` | `float` | USD per hour |
+| `location` | `str` | Country/region |
+| `specs` | `dict` | Hardware specs (RAM, storage, etc.) |
+| `status` | `str` | Availability status |
+| `docker_in_docker` | `bool` | DinD support |
+| `ip` | `str` | Machine IP |
+
+### Executor (low-level SDK)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `UUID` | Executor identifier |
+| `gpu_type` | `str` | GPU model |
+| `gpu_count` | `int` | Number of GPUs |
+| `price` | `float` | USD per hour |
+| `location` | `str` | Country/region |
+| `driver_version` | `str` | NVIDIA driver version |
+| `docker_in_docker` | `bool` | DinD support |
+
+### PodInfo / Pod
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `UUID` | Pod identifier |
+| `name` | `str` | Pod name |
+| `status` | `str` | "RUNNING", "STOPPED", "PENDING", etc. |
+| `huid` | `str` | Human-readable ID |
+| `ssh_cmd` | `str` | Ready-to-use SSH command |
+| `ssh_ip` | `str` | SSH host |
+| `ssh_port` | `int` | SSH port |
+| `ports` | `list[dict]` | Allocated port mappings |
+| `executor` | `Executor` | Associated executor info |
+| `template` | `Template` | Docker template used |
+| `created_at` | `datetime` | Creation timestamp |
+| `removal_scheduled_at` | `datetime | None` | Scheduled termination time |
+| `jupyter_url` | `str | None` | Jupyter URL if enabled |
+
+### Template
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `UUID` | Template identifier |
+| `name` | `str` | Template name |
+| `huid` | `str` | Human-readable ID |
+| `docker_image` | `str` | Docker image name |
+| `docker_image_tag` | `str` | Image tag |
+| `category` | `str` | Template category (ml, web, etc.) |
+| `status` | `str` | Build status |
+
+### VolumeInfo
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `UUID` | Volume identifier |
+| `huid` | `str` | Human-readable ID |
+| `name` | `str` | Volume name |
+| `description` | `str` | Volume description |
+| `current_size_bytes` | `int` | Current storage used |
+| `current_file_count` | `int` | Number of files |
+
+### BackupConfig
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `UUID` | Config identifier |
+| `pod_executor_id` | `UUID` | Associated pod |
+| `backup_frequency_hours` | `int` | Backup interval in hours |
+| `retention_days` | `int` | Days to keep backups |
+| `backup_path` | `str` | Path being backed up |
+| `is_active` | `bool` | Whether backups are enabled |
+
+---
+
+## Exceptions
+
+High-level SDK (`lium.sdk`):
+| Exception | Trigger |
+|-----------|---------|
+| `LiumError` | Base exception |
+| `LiumAuthError` | Invalid API key (401) |
+| `LiumNotFoundError` | Resource not found (404) |
+| `LiumRateLimitError` | Rate limit exceeded (429) |
+| `LiumServerError` | Server errors (5xx) |
+
+Enable debug logging:
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+Or set `LIUM_DEBUG=1` environment variable.

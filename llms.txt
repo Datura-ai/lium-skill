@@ -1,0 +1,24 @@
+# Lium
+
+Decentralized GPU rental platform on Bittensor. CLI and Python SDK for renting GPUs, managing pods, and deploying ML workloads.
+
+Install CLI (standalone binary, no Python required):
+  curl -fsSL https://lium.io/install.sh | bash
+
+Install agent skills (Claude Code / Cursor / Codex):
+  curl -fsSL https://lium.io/agents/install.sh | bash
+
+Primary resources:
+- Full reference (self-contained):   https://lium.io/llms-full.txt
+- Skill file (with frontmatter):     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/SKILL.md
+- CLI reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md
+- SDK reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md
+- CLI installer source:              https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh
+- Skills installer source:           https://raw.githubusercontent.com/Datura-ai/lium-skill/main/agents/install.sh
+
+Other:
+- GitHub (CLI):       https://github.com/Datura-ai/lium
+- GitHub (skill):     https://github.com/Datura-ai/lium-skill
+- PyPI:               https://pypi.org/project/lium.io/
+- Docs:               https://docs.lium.io
+- Dashboard:          https://lium.io
