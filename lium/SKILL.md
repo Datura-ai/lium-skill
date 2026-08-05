@@ -1,6 +1,6 @@
 ---
 name: lium
-description: GPU pod management on Lium platform via CLI and Python SDK. Use for renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
+description: GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
 allowed-tools: Bash(lium:*)
 ---
 
@@ -23,11 +23,15 @@ curl -fsSL https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install
 
 This auto-detects OS (Linux/macOS) and architecture, downloads the binary to `~/.lium/bin/lium`, and adds it to PATH.
 
-After install, initialize authentication:
+After install, authentication depends on whether the user has a Lium account:
+
+- **No account** → `lium signup --email <their email>` — see "No Account Yet — Sign Up". Do not send the user to the web signup form.
+- **Has an account** → `lium init` (opens a browser) or `lium init --no-browser` for headless/agent use — see "Authentication Setup for Agents".
 
 ```bash
-lium init              # opens browser automatically
-lium init --no-browser  # prints auth URL (for headless/agent use)
+lium signup --email ada@example.com   # no account yet
+lium init                             # existing account, browser
+lium init --no-browser                # existing account, headless
 ```
 
 Verify setup:
@@ -51,7 +55,139 @@ pip install lium.io
 
 **CRITICAL**: Many lium commands are interactive by default. As an agent, always pass all parameters explicitly to avoid interactive prompts.
 
+### No Account Yet — Sign Up
+
+`lium init` authenticates a user who **already has an account**. To create one, use
+`lium signup` — no browser, no dashboard, no web form. The whole cold start is four commands:
+
+```bash
+lium signup --email ada@example.com   # creates the account, stores the API key
+lium ls                               # browse machines
+lium up <node-id> -y                  # rent
+lium ssh <pod>                        # connect
+```
+
+Only create an account when the user asks for one. Ask for their **real email** first — the
+confirmation link needed for renting is sent there, and the account, its balance and password
+recovery are tied to it. Never invent an address, never use a disposable inbox.
+
+`lium signup` prints the generated password — hand it to the user, it is their dashboard login
+(to choose one instead, pass `--password` or set `LIUM_SIGNUP_PASSWORD`, which keeps it off argv).
+Even when the command fails after the account was created — a timeout, or the API key could not
+be read back — the error still reports the email and password, so the account is never stranded.
+Add `--json` for a machine-readable
+`{email, password, api_key, signup_credit_granted, ssh_key_configured, next_steps}`.
+The key is written to `~/.lium/config.ini`, so the account is then indistinguishable from one
+set up with `lium init`.
+
+Older binaries do not have the command. Probe for it, and update when it is missing:
+
+```bash
+lium --version                        # diagnostics only — probe the command itself below
+lium signup --help >/dev/null 2>&1 || echo "CLI too old — update it"
+
+# Binary install (installed via install.sh): auto-updates on launch, or force it
+curl -fsSL https://lium.io/install.sh | bash
+
+# pip / uv install
+uv tool upgrade lium.io    # or: pip install -U lium.io
+```
+
+On an older CLI that cannot be updated, the same signup is three HTTP calls:
+
+```bash
+BASE=https://lium.io/api
+
+# 1. Create the account. An API key named "Default" is minted server-side here; current
+#    backends return it in the response — {"msg": "success", "api_key": "sk_...",
+#    "signup_credit_granted": true|false} — older ones mint it without returning it.
+curl -sX POST $BASE/users -H 'Content-Type: application/json' \
+  -d '{"name":"Ada","email":"ada@example.com","password":"..."}'
+
+# 2-3. Only when the response had no api_key: log in for a JWT, read the key back (format sk_...).
+TOKEN=$(curl -sX POST $BASE/users/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"..."}' | jq -r .token)
+KEY=$(curl -s $BASE/keys -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.[] | select(.name=="Default") | .key')
+
+lium config set api.api_key "$KEY"
+# leave ssh.key_path unset — the CLI generates and configures the key on first use,
+# and setting the path to a key that does not exist yet makes it skip that
+```
+
+### Before the First Rental — Verification and Balance
+
+`lium up` calls `POST /executors/{executor_id}/rent`, which fails with `403` until both gates
+are cleared. Map the error to the action:
+
+| 403 on rent | Meaning | Action |
+|---|---|---|
+| `"User is not verified"` | The confirmation link has not been clicked yet. | Ask the user to click it, then retry — see "Email confirmation" below. Do not abandon the task. |
+| `"Insufficient balance"` | The account balance is zero. | Fund the account — see "Funding options" below. |
+
+#### Email confirmation
+
+Registration sends **two** mails: `"Welcome to Celium!"` (no link in it) and
+`"Please confirm your email"` — only the second one carries the link. Point the user at that
+subject, and ask them to click the link. That is the normal path.
+
+Two endpoints on `https://lium.io/api` cover the cases where it does not work. Neither needs
+auth; both take JSON:
+
+```bash
+# Mail never arrived / link expired (tokens are valid 24h) — send a fresh one
+curl -sX POST https://lium.io/api/auth/resend-verify-email \
+  -H 'Content-Type: application/json' -d '{"email":"ada@example.com"}'
+# 400 "User doesn't exist." or "Email is already verified." when it does not apply
+
+# User pastes the link instead of clicking it — finish verification from its ?token=
+curl -sX POST https://lium.io/api/auth/verify-email \
+  -H 'Content-Type: application/json' -d '{"token":"<token from the link>"}'
+```
+
+#### The $5 signup credit
+
+New accounts get a $5 credit. It is granted when the platform has the credit enabled **and** no
+other account has signed up from this IP address — nothing about the email domain matters. Do not
+explain a `403 "Insufficient balance"` with the credit: that error only says the balance is zero,
+and the answer to it is to fund the account.
+
+Whether it landed is answered by `signup_credit_granted` in the signup response (also in
+`lium signup --json`): `true` → granted, `false` → not granted. When it is `null` or absent —
+the backend does not report it — read the balance:
+
+```bash
+lium balance --json   # {"balance_usd": 5.0}
+```
+
+#### Funding options
+
+- Dashboard: https://lium.io/billing
+- Headless invoice: `POST /tmc-pay/create-invoice` with header `X-API-Key: sk_...` and a body of
+  `{"amount": <USD>, "crypto_currency": "...", "crypto_network": "..."}` (all three required).
+  Valid currency/network pairs come from `GET /tmc-pay/currencies` (same API key header). The
+  response carries `deposit_address`, `crypto_amount`, `hosted_invoice_url` and `expires_at` —
+  give these to the user to pay from their wallet, do not move funds on their behalf.
+
+  ```bash
+  # {"currencies": [{"code": "USDT", "network": "tron", ...}, ...]} — pick a pair from here
+  curl -s https://lium.io/api/tmc-pay/currencies -H "X-API-Key: sk_..."
+
+  curl -sX POST https://lium.io/api/tmc-pay/create-invoice -H "X-API-Key: sk_..." \
+    -H 'Content-Type: application/json' \
+    -d '{"amount": 20, "crypto_currency": "USDT", "crypto_network": "tron"}'
+  ```
+
+- `lium fund -w default -a 10.0 -y` for users with a Bittensor wallet — here `-a` is an amount of
+  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves Subnet-51 alpha the
+  user already has staked: `lium fund --alpha -k <hotkey-ss58> -a 10 -y`.
+
+SSH keys need no extra registration — the public key at `ssh.key_path` is registered
+server-side right before renting.
+
 ### Authentication Setup for Agents
+
+For a user who already has an account (skip if you just ran the signup flow above and stored the key).
 
 **Preferred: two-step headless auth** — no API key needed, no blocking, no browser:
 
@@ -330,7 +466,10 @@ if ! command -v lium >/dev/null 2>&1; then
   export PATH="$HOME/.lium/bin:$PATH"
 fi
 
-# 2. Authenticate (two-step headless flow)
+# 2a. No account yet → sign up (asks the user for their real email first)
+lium signup --email <USER_EMAIL>
+
+# 2b. Existing account → two-step headless auth instead
 lium init --no-browser
 # → parse URL and session ID from output, show URL to user
 # → wait for user to confirm they approved
