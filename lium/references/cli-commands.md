@@ -40,7 +40,8 @@
 ## lium signup
 
 Create a Lium account and store the API key it mints. Fully non-interactive — this is
-the command to use when the user has **no account yet**. Requires CLI 0.0.29 or newer.
+the command to use when the user has **no account yet**. Older CLI binaries do not have it —
+probe with `lium signup --help` and update the CLI when it is missing.
 
 ```bash
 lium signup [OPTIONS]

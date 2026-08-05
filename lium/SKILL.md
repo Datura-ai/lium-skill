@@ -63,7 +63,7 @@ pip install lium.io
 ```bash
 lium signup --email ada@example.com   # creates the account, stores the API key
 lium ls                               # browse machines
-lium up <node-id>                     # rent
+lium up <node-id> -y                  # rent
 lium ssh <pod>                        # connect
 ```
 
@@ -80,10 +80,10 @@ Add `--json` for a machine-readable
 The key is written to `~/.lium/config.ini`, so the account is then indistinguishable from one
 set up with `lium init`.
 
-**Requires CLI 0.0.29 or newer.** Older binaries do not have the command. Check and update:
+Older binaries do not have the command. Probe for it, and update when it is missing:
 
 ```bash
-lium --version
+lium --version                        # diagnostics only — probe the command itself below
 lium signup --help >/dev/null 2>&1 || echo "CLI too old — update it"
 
 # Binary install (installed via install.sh): auto-updates on launch, or force it
@@ -111,7 +111,8 @@ KEY=$(curl -s $BASE/keys -H "Authorization: Bearer $TOKEN" \
   | jq -r '.[] | select(.name=="Default") | .key')
 
 lium config set api.api_key "$KEY"
-lium config set ssh.key_path ~/.ssh/id_ed25519
+# leave ssh.key_path unset — the CLI generates and configures the key on first use,
+# and setting the path to a key that does not exist yet makes it skip that
 ```
 
 ### Before the First Rental — Verification and Balance
