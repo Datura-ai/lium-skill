@@ -53,7 +53,49 @@ pip install lium.io
 
 **CRITICAL**: Many lium commands are interactive by default. As an agent, always pass all parameters explicitly to avoid interactive prompts.
 
+### No Account Yet — Sign Up via API
+
+`lium init` authenticates a user who **already has an account**. Signup itself is programmatic too — three calls against `https://lium.io/api`, no browser, no dashboard. Never stall at the web signup form.
+
+Only create an account when the user asks for one. Ask for their **real email** first — the account, its balance and password recovery hang off that address. Never use a disposable inbox, never guess an address.
+
+```bash
+BASE=https://lium.io/api
+
+# 1. Create the account. The response carries NO API key.
+curl -sX POST $BASE/users -H 'Content-Type: application/json' \
+  -d '{"name":"Ada","email":"ada@example.com","password":"..."}'
+# 200 {"msg": "success"}
+# An API key named "Default" is created server-side at this moment.
+
+# 2. Log in for an access token (JWT).
+TOKEN=$(curl -sX POST $BASE/users/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"..."}' | jq -r .token)
+
+# 3. Read the key created at signup (format sk_...).
+KEY=$(curl -s $BASE/keys -H "Authorization: Bearer $TOKEN" \
+  | jq -r '.[] | select(.name=="Default") | .key')
+```
+
+Store it as the CLI/SDK credential (writes `~/.lium/config.ini`):
+
+```bash
+lium config set api.api_key "$KEY"
+```
+
+An update is in flight to return the API key directly from `POST /users`, collapsing steps 1–3 into one call. Until it ships, run all three.
+
+### After Signup — What Still Blocks the First Rental
+
+- **$5 signup credit** is granted automatically, **once per IP address**. If another account was already created from this IP, no credit is granted. Say that plainly and offer to fund — don't leave a later failure unexplained.
+- **Renting requires a verified email.** The verification link arrives in the welcome email; the user clicks it once. This is currently the only step a human has to perform. Ask, then retry — don't fail the whole task.
+- **Renting requires a positive balance.** `POST /executors/{executor_id}/rent` returns `403 "User is not verified"` (email not confirmed yet) or `403 "Insufficient balance"`.
+- **Funding without a browser**: `POST /tmc-pay/create-invoice`, authenticated with the API key (`X-API-Key: sk_...`), returns `deposit_address`, the crypto amount and `expires_at` — enough for an agent with a wallet to top up headlessly. `POST /nowpayments/create-invoice` is the equivalent alternative.
+- **SSH keys need no special handling** — the SDK registers the user's public key server-side right before renting.
+
 ### Authentication Setup for Agents
+
+For a user who already has an account (skip if you just ran the signup flow above and stored the key).
 
 **Preferred: two-step headless auth** — no API key needed, no blocking, no browser:
 
@@ -332,7 +374,7 @@ if ! command -v lium >/dev/null 2>&1; then
   export PATH="$HOME/.lium/bin:$PATH"
 fi
 
-# 2. Authenticate (two-step headless flow)
+# 2. Authenticate (two-step headless flow; no account yet → sign up via API first)
 lium init --no-browser
 # → parse URL and session ID from output, show URL to user
 # → wait for user to confirm they approved
