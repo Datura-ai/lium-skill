@@ -1,5 +1,9 @@
 # Lium CLI Command Reference
 
+Verified against the published CLI **v0.0.27**. Every flag below exists; nothing is
+listed that the binary does not accept. When in doubt, `lium <command> --help` is
+the source of truth.
+
 ## Table of Contents
 
 - [Global Options](#global-options)
@@ -13,14 +17,18 @@
 - [lium rsync](#lium-rsync)
 - [lium rm](#lium-rm)
 - [lium templates](#lium-templates)
+- [lium balance](#lium-balance)
 - [lium fund](#lium-fund)
+- [lium topup](#lium-topup)
 - [lium config](#lium-config)
 - [lium logs](#lium-logs)
 - [lium port-forward](#lium-port-forward)
 - [lium reboot](#lium-reboot)
+- [lium update](#lium-update)
 - [lium volumes](#lium-volumes)
 - [lium bk (backups)](#lium-bk-backups)
 - [lium schedules](#lium-schedules)
+- [lium ssh-keys](#lium-ssh-keys)
 - [lium theme](#lium-theme)
 - [Batch Operations](#batch-operations)
 - [Pod Targeting](#pod-targeting)
@@ -32,17 +40,22 @@
 ```
 --help        Show help message
 --version     Display CLI version
---config PATH Use alternate config file
---debug       Enable debug output
 ```
+
+There is no global `--config` or `--debug`. Per-command flags are listed below.
 
 ## lium init
 
-Interactive setup wizard. **NOT suitable for agent/scripted use** — has no non-interactive flags.
+Set up the API key and SSH key. Has two non-interactive flags, so an agent can drive it:
 
-For agent setup, write config directly:
 ```bash
-mkdir -p ~/.lium
+lium init [OPTIONS]
+  --no-browser        Print the approval URL and session id, then exit immediately
+  --session SESSION   Complete auth with the session id from --no-browser
+```
+
+Alternatively, write the config directly when the key is already known:
+```bash
 lium config set api.api_key YOUR_KEY
 lium config set ssh.key_path ~/.ssh/id_ed25519
 ```
@@ -64,11 +77,13 @@ lium ls [OPTIONS]
 
 Examples:
 ```bash
-lium ls                     # all nodes
-lium ls --gpu H100          # only H100 GPUs
+lium ls                       # all nodes
+lium ls --gpu H100            # only H100 GPUs
 lium ls --gpu H100 --count 8  # 8×H100 machines
-lium ls --format json       # JSON output for parsing
+lium ls --format json         # JSON output for parsing
 ```
+
+There is no positional GPU argument — `lium ls H100` is not valid, use `--gpu H100`.
 
 ## lium up
 
@@ -89,10 +104,13 @@ lium up [EXECUTOR_ID] [OPTIONS]
   --until TIME                Auto-terminate at time ("today 23:00", "tomorrow 01:00")
   --jupyter                   Install Jupyter Notebook (auto-selects port)
   --image IMAGE               Docker image (e.g., pytorch/pytorch:2.0)
+  --dockerfile PATH           Build from a Dockerfile instead of a prebuilt image
   -e, --env KEY=VALUE         Environment variables (repeatable)
   --cmd TEXT                  Command to run in container
   --entrypoint TEXT           Container entrypoint
   --internal-ports TEXT       Internal ports to expose (comma-separated)
+  --ssh-name NAME             SSH key to register for this pod
+  --volume-encryption / --no-volume-encryption   Encrypt the attached volume
 ```
 
 Examples:
@@ -126,47 +144,46 @@ lium ps [POD_ID] [OPTIONS]
 
 ## lium ssh
 
-SSH into a pod.
+SSH into a pod. Takes a target and nothing else — there is no `--command`, `--port`
+or `--key` flag. To run a command remotely use `lium exec`.
 
 ```bash
-lium ssh POD [OPTIONS]
-  POD               Pod name or index from lium ps
-  --command CMD     Execute command and exit
-  --port PORT       SSH port (default: 22)
-  --key PATH        Use specific SSH key
+lium ssh TARGET
+  TARGET            Pod name, huid or index from lium ps
 ```
 
 ## lium exec
 
-Execute command on pod(s).
+Execute a command on one or more pods.
 
 ```bash
-lium exec POD COMMAND [OPTIONS]
-  POD               Pod name, index, comma-separated list, or "all"
+lium exec TARGETS [COMMAND] [OPTIONS]
+  TARGETS           Pod name, index, comma-separated list, or "all"
   COMMAND           Command to execute (quote multi-word commands)
-  --timeout SECONDS Command timeout
-  --output FILE     Save output to file
+  -s, --script PATH Run a local script file on the pod instead of COMMAND
+  -e, --env KEY=VAL Environment variables for the command (repeatable)
 ```
 
 Examples:
 ```bash
 lium exec my-pod "python train.py"
-lium exec 1 "nvidia-smi" --output gpu.txt
+lium exec my-pod -s ./setup.sh
 lium exec all "pip install numpy"
 ```
 
+There is no `--timeout` and no `--output` — redirect on the shell side instead:
+`lium exec my-pod "nvidia-smi" > gpu.txt`.
+
 ## lium scp
 
-Copy files to/from pods.
+Copy files to and from pods.
 
 ```bash
-lium scp POD LOCAL_FILE [REMOTE_PATH] [OPTIONS]
-  POD               Pod name, index, comma-separated list, or "all"
-  LOCAL_FILE        Local file to copy
-  REMOTE_PATH       Destination path (default: /root/)
-  -r, --recursive   Copy directories recursively
-  -p, --preserve    Preserve file attributes
-  -d                Download mode (pod → local)
+lium scp TARGETS SOURCE_PATH [DESTINATION_PATH] [OPTIONS]
+  TARGETS           Pod name, index, comma-separated list, or "all"
+  SOURCE_PATH       File or directory to copy
+  DESTINATION_PATH  Destination path (default: /root/)
+  -d, --download    Download mode (pod → local)
 ```
 
 Examples:
@@ -174,21 +191,20 @@ Examples:
 lium scp my-pod ./script.py                 # upload to /root/
 lium scp 1 ./data.csv /root/datasets/       # specific destination
 lium scp all ./config.json                  # upload to all pods
-lium scp my-pod ./folder -r                 # directory upload
+lium scp my-pod /root/out.txt ./ -d         # download from pod
 ```
+
+There are no `-r` / `-p` flags — directories are handled without a recursive flag.
 
 ## lium rsync
 
-Synchronize directories to pods.
+Synchronize a local directory to pods. Takes no options.
 
 ```bash
-lium rsync POD LOCAL_DIR [REMOTE_PATH] [OPTIONS]
-  POD               Pod name, index, list, or "all"
-  LOCAL_DIR         Local directory to sync
+lium rsync TARGETS LOCAL_PATH [REMOTE_PATH]
+  TARGETS           Pod name, index, list, or "all"
+  LOCAL_PATH        Local directory to sync
   REMOTE_PATH       Destination path
-  --delete          Delete files not in source
-  --exclude PATTERN Exclude files matching pattern
-  --dry-run         Show what would be synced
 ```
 
 ## lium rm
@@ -196,11 +212,11 @@ lium rsync POD LOCAL_DIR [REMOTE_PATH] [OPTIONS]
 Remove/stop pods. **No `-y` flag** — use `echo "y" |` for non-interactive usage.
 
 ```bash
-lium rm POD [POD...] [OPTIONS]
-  POD               Pod name(s), indices, or "all"
-  -a, --all         Remove all pods
-  --in TEXT          Remove pods matching name pattern
-  --at TEXT          Remove pods on specific executor
+lium rm [TARGETS] [OPTIONS]
+  TARGETS           Pod name(s), indices, or "all"
+  -a, --all         Remove all active pods
+  --in TEXT         Schedule the removal after a duration (e.g. 2h)
+  --at TEXT         Schedule the removal at a time
 ```
 
 **Agent usage** (non-interactive):
@@ -223,15 +239,43 @@ lium templates [SEARCH]
 - Without `--template_id` in `lium up`, the default **PyTorch (CUDA)** template is used — fastest to start
 - Default Docker-in-Docker (dind) image: `daturaai/dind`
 
+## lium balance
+
+Show the account balance.
+
+```bash
+lium balance [OPTIONS]
+  --json            Print machine-readable JSON
+```
+
 ## lium fund
 
-Fund account with TAO from Bittensor wallet. **Always use `-y` for agent use.**
+Fund the account with TAO from a Bittensor wallet. **Always use `-y` for agent use.**
 
 ```bash
 lium fund [OPTIONS]
   -w, --wallet NAME   Wallet name (REQUIRED for non-interactive)
   -a, --amount AMOUNT Amount of TAO (REQUIRED for non-interactive)
+  -k, --hotkey NAME   Hotkey on the coldkey
+  --alpha             Fund with alpha instead of TAO
+  --json              Print machine-readable JSON
   -y, --yes           Skip confirmation (REQUIRED for agent use)
+```
+
+## lium topup
+
+Fund the account with crypto — no Bittensor wallet needed.
+
+```bash
+lium topup currencies [OPTIONS]
+  --refresh           Bypass the cached currency list
+  --json              Print machine-readable JSON
+
+lium topup create [OPTIONS]
+  -a, --amount AMOUNT   Amount in USD
+  -c, --currency CODE   Currency to pay in
+  -n, --network NAME    Network for that currency
+  --json                Print machine-readable JSON
 ```
 
 ## lium config
@@ -239,10 +283,13 @@ lium fund [OPTIONS]
 Manage configuration.
 
 ```bash
-lium config show                         # display all config
-lium config get api.api_key             # get specific value
-lium config set ssh.key_path ~/.ssh/key  # set value
-lium config edit                         # open in editor
+lium config show                          # display all config
+lium config get api.api_key               # get specific value
+lium config set ssh.key_path ~/.ssh/key   # set value
+lium config unset KEY                     # remove a key
+lium config path                          # path to the config file
+lium config edit                          # open in editor
+lium config reset --confirm               # wipe all configuration
 ```
 
 ## lium logs
@@ -250,34 +297,47 @@ lium config edit                         # open in editor
 Stream pod logs.
 
 ```bash
-lium logs POD [OPTIONS]
-  -f              Follow log output
-  -n NUM          Number of lines to show
+lium logs POD_ID [OPTIONS]
+  -f, --follow      Follow log output
+  -n, --tail NUM    Number of lines to show
 ```
 
 ## lium port-forward
 
-Forward local port to pod. Useful for accessing Jupyter, TensorBoard, or other web services.
+Forward a local port to a pod. Useful for Jupyter, TensorBoard or any web service.
 
 ```bash
-lium port-forward POD PORT [OPTIONS]
-  POD   Pod name or index
-  PORT  Remote port to forward
+lium port-forward TARGET PORT [OPTIONS]
+  TARGET              Pod name, huid or index
+  PORT                Port inside the pod to forward
+  -l, --local-port N  Local port to bind (default: same as PORT)
 ```
 
 Examples:
 ```bash
 lium port-forward my-pod 8888    # forward Jupyter (localhost:8888)
-lium port-forward 1 6006         # forward TensorBoard
+lium port-forward my-pod 6006 -l 16006
 ```
 
 ## lium reboot
 
-Reboot a pod.
+Reboot pods. A reboot **recreates** the pod: the ephemeral filesystem is lost, only
+attached volumes survive.
 
 ```bash
-lium reboot POD [OPTIONS]
-  -v, --volume SPEC  Attach volume on reboot
+lium reboot [TARGETS] [OPTIONS]
+  TARGETS             Pod name(s), indices, or "all"
+  -a, --all           Reboot all active pods
+  --volume-id ID      Attach this volume on reboot
+```
+
+## lium update
+
+Update a running pod — currently installs Jupyter.
+
+```bash
+lium update TARGET [OPTIONS]
+  --jupyter           Install Jupyter Notebook on the pod
 ```
 
 ## lium volumes
@@ -287,21 +347,32 @@ Manage persistent volumes.
 ```bash
 lium volumes list                        # list all volumes
 lium volumes new NAME [OPTIONS]          # create volume
-  --desc DESCRIPTION
-lium volumes rm VOLUME                   # delete volume
+  -d, --desc DESCRIPTION
+lium volumes rm INDICES [OPTIONS]        # delete volumes by index from `volumes list`
+  -y, --yes
 ```
 
 ## lium bk (backups)
 
-Manage pod backups.
+Manage pod backups. The pod is a positional argument; everything else is a flag.
 
 ```bash
-lium bk show POD              # show backup config
-lium bk set POD PATH          # configure auto-backups
-lium bk now POD               # trigger immediate backup
-lium bk logs POD              # view backup logs
-lium bk restore POD BACKUP_ID # restore from backup
-lium bk rm POD                # remove backup config
+lium bk show POD_ID                        # show backup config
+lium bk set POD_ID [OPTIONS]               # configure auto-backups
+  --path PATH                              # directory to back up
+  --every HOURS                            # backup frequency
+  --keep DAYS                              # retention
+  -y, --yes
+lium bk now POD_ID [OPTIONS]               # trigger immediate backup
+  -n, --name NAME
+  -d, --description TEXT
+lium bk logs [POD_ID] [--id ID]            # backup logs
+lium bk restore POD_ID [OPTIONS]           # restore from a backup
+  --id ID                                  # backup id to restore
+  --to PATH                                # restore destination
+  -y, --yes
+lium bk restore-logs [POD_ID] [--id ID]    # restore logs
+lium bk rm POD_ID [-y]                     # remove backup config
 ```
 
 ## lium schedules
@@ -310,18 +381,27 @@ Manage scheduled terminations.
 
 ```bash
 lium schedules list            # list scheduled terminations
-lium schedules rm POD          # cancel scheduled termination
+lium schedules rm INDICES      # cancel by index from `schedules list`
+```
+
+## lium ssh-keys
+
+Manage the SSH keys registered with Lium.
+
+```bash
+lium ssh-keys list             # keys registered on the account
+lium ssh-keys sync             # register the local public key
 ```
 
 ## lium theme
 
-Change CLI color theme.
+Set the CLI color theme. The theme name is required.
 
 ```bash
-lium theme [THEME]   # interactive if no theme specified
+lium theme THEME_NAME
 ```
 
-Available: default, monokai, solarized, dracula, nord.
+Available: `dark`, `light`.
 
 ## Batch Operations
 
@@ -338,19 +418,29 @@ lium rsync all ./project
 
 Pods accept these identifiers:
 - **Name**: `lium ssh my-pod`
-- **Index**: `lium ssh 1` (from `lium ps` output)
+- **HUID**: `lium ssh eager-wolf-aa`
+- **Index**: `lium ssh 1` (from `lium ps` output — indices shift as pods change, prefer names)
 - **Comma list**: `lium exec 1,2,3 "cmd"`
 - **All**: `lium exec all "cmd"`
 
 ## Environment Variables
 
 ```bash
-LIUM_API_KEY=xyz lium ls       # override API key
-LIUM_SSH_KEY=/tmp/key lium ssh my-pod
-LIUM_DEBUG=1 lium up           # debug output
+LIUM_API_KEY=xyz lium ls          # override the API key
+LIUM_BASE_URL=... lium ls         # point the CLI at another backend (e.g. staging)
+LIUM_DEBUG=1 lium up              # debug output
 ```
 
+There is no `LIUM_SSH_KEY` — set `ssh.key_path` with `lium config set` instead.
+
 ## Exit Codes
+
+**v0.0.27 does not have a documented exit-code contract.** Several commands report an
+error and still exit `0` — for example `lium ps` on a pod id that matches nothing.
+Do not use the exit code alone to decide whether a command succeeded; check the
+output as well.
+
+The contract below has landed on `main` and will apply from the next release:
 
 | Code | Meaning |
 |------|---------|

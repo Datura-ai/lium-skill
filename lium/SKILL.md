@@ -256,10 +256,10 @@ If an executor is visible on the lium.io dashboard but `lium up <executor_id>` o
 
 ```bash
 lium ls                        # all available GPUs (shows table with ★ for best price/perf)
-lium ls H100                   # filter by type
-lium ls --sort download        # sort by download speed (fastest first) — preferred default
+lium ls --gpu H100             # filter by type (there is no positional `lium ls H100`)
+lium ls --sort download        # sort by download speed (fastest first) — this is the default
 lium ls --sort upload          # sort by upload speed
-lium ls --sort price_gpu       # sort by price per GPU/hour (default)
+lium ls --sort price_gpu       # sort by price per GPU/hour
 lium ls --format json          # machine-parseable output
 lium templates                 # list Docker templates
 lium templates pytorch         # search templates
@@ -318,7 +318,7 @@ Which command takes what (verified against v0.0.27):
 | Command | Flag |
 |---|---|
 | `lium ls`, `lium ps` | `--format table\|json` — no other format, `csv` does not exist |
-| `lium balance`, `lium fund crypto currencies`, `lium fund crypto invoice` | `--json` |
+| `lium balance`, `lium fund`, `lium topup currencies`, `lium topup create` | `--json` |
 | `lium provider …` | `--json` on the group, so every provider subcommand takes it |
 | everything else (`templates`, `volumes`, `schedules`, `ssh-keys`, `exec`, `logs`, `bk`, …) | no machine-readable output — parse the text or use the SDK |
 

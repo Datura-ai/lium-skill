@@ -147,7 +147,7 @@ print(result["stdout"])
 
 # Files
 lium.upload(pod, local="train.py", remote="/root/train.py")
-lium.exec(pod, "python /root/train.py")
+lium.exec(pod, command="python /root/train.py")
 lium.download(pod, remote="/root/model.pt", local="./model.pt")
 
 # Backups
