@@ -5,7 +5,10 @@ Decentralized GPU rental platform on Bittensor. CLI and Python SDK for renting G
 Install CLI (standalone binary, no Python required):
   curl -fsSL https://lium.io/install.sh | bash
 
-Install agent skills (Claude Code / Cursor / Codex):
+Install the agent skill (any agent supporting the Agent Skills standard):
+  npx skills add Datura-ai/lium-skill --skill lium
+
+Install the agent skill without node (Claude Code / Cursor / Codex):
   curl -fsSL https://lium.io/agents/install.sh | bash
 
 Primary resources:

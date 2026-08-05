@@ -1,6 +1,7 @@
 ---
 name: lium
 description: GPU pod management on Lium platform via CLI and Python SDK. Use for renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
+allowed-tools: Bash(lium:*)
 ---
 
 # Lium CLI & SDK
