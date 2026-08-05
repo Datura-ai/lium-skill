@@ -50,6 +50,9 @@ lium signup [OPTIONS]
   --json              Machine-readable output
 ```
 
+The password can also come from the `LIUM_SIGNUP_PASSWORD` environment variable — `--password`
+wins when both are set. Whatever its origin, it is always reported back to the caller.
+
 Ask the user for their **real** email — the account, its balance, password recovery and the
 confirmation link needed for renting are all tied to it. Never invent an address.
 
@@ -63,6 +66,12 @@ of creating a second, unreachable account. To sign up anyway, drop the existing 
 ```bash
 lium config unset api.api_key   # then: lium signup --email ...
 ```
+
+**Failures never strand the account.** When the command fails after the account was created —
+the request timed out, or the API key could not be read back — the error still reports the
+email and password, so the user can log in at https://lium.io and copy an API key from the
+dashboard. With `--json`, that error goes to stderr as
+`{"ok": false, "error": {...}, "data": {"email": "...", "password": "..."}}`.
 
 Examples:
 ```bash
@@ -84,8 +93,9 @@ lium signup --email ada@example.com --name Ada --json
 
 - `password` — the dashboard login at https://lium.io. Hand it to the user; it is not stored anywhere else.
 - `signup_credit_granted` — comes straight from the signup API response and is the authoritative
-  answer to "did the $5 signup credit land?". If it is missing (older CLI or backend), read the
-  balance instead: `lium balance --json`.
+  answer to "did the $5 signup credit land?": `true` → granted; `false` → not granted (the
+  once-per-IP gate, or the credit disabled platform-side); `null` → the backend did not report
+  it (older backend) — read the balance instead: `lium balance --json`.
 - Renting stays blocked until the user clicks the link in the **"Please confirm your email"** mail
   (the separate "Welcome to Celium!" mail carries no link).
 
@@ -403,6 +413,7 @@ LIUM_API_KEY=xyz lium ls       # override API key
 LIUM_SSH_KEY=/tmp/key lium ssh my-pod
 LIUM_DEBUG=1 lium up           # debug output
 LIUM_BASE_URL=https://staging.lium.io/api lium signup --email ada@example.com
+LIUM_SIGNUP_PASSWORD=pw lium signup --email ada@example.com   # signup password kept off argv
 ```
 
 `LIUM_BASE_URL` (default `https://lium.io/api`, the `/api` suffix included) points the SDK

@@ -71,7 +71,10 @@ Only create an account when the user asks for one. Ask for their **real email** 
 confirmation link needed for renting is sent there, and the account, its balance and password
 recovery are tied to it. Never invent an address, never use a disposable inbox.
 
-`lium signup` prints the generated password — hand it to the user, it is their dashboard login.
+`lium signup` prints the generated password — hand it to the user, it is their dashboard login
+(to choose one instead, pass `--password` or set `LIUM_SIGNUP_PASSWORD`, which keeps it off argv).
+Even when the command fails after the account was created — a timeout, or the API key could not
+be read back — the error still reports the email and password, so the account is never stranded.
 Add `--json` for a machine-readable
 `{email, password, api_key, signup_credit_granted, ssh_key_configured, next_steps}`.
 The key is written to `~/.lium/config.ini`, so the account is then indistinguishable from one
@@ -95,11 +98,13 @@ On an older CLI that cannot be updated, the same signup is three HTTP calls:
 ```bash
 BASE=https://lium.io/api
 
-# 1. Create the account. An API key named "Default" is minted server-side here.
+# 1. Create the account. An API key named "Default" is minted server-side here; current
+#    backends return it in the response — {"msg": "success", "api_key": "sk_...",
+#    "signup_credit_granted": true|false} — older ones mint it without returning it.
 curl -sX POST $BASE/users -H 'Content-Type: application/json' \
   -d '{"name":"Ada","email":"ada@example.com","password":"..."}'
 
-# 2. Log in for a JWT. 3. Read the key back (format sk_...).
+# 2-3. Only when the response had no api_key: log in for a JWT, read the key back (format sk_...).
 TOKEN=$(curl -sX POST $BASE/users/login -H 'Content-Type: application/json' \
   -d '{"email":"ada@example.com","password":"..."}' | jq -r .token)
 KEY=$(curl -s $BASE/keys -H "Authorization: Bearer $TOKEN" \
@@ -147,7 +152,8 @@ explain a `403 "Insufficient balance"` with the credit: that error only says the
 and the answer to it is to fund the account.
 
 Whether it landed is answered by `signup_credit_granted` in the signup response (also in
-`lium signup --json`). If that field is absent — older CLI or backend — read the balance:
+`lium signup --json`): `true` → granted, `false` → not granted. When it is `null` or absent —
+the backend does not report it — read the balance:
 
 ```bash
 lium balance --json   # {"balance_usd": 5.0}
