@@ -1243,11 +1243,15 @@ from lium.sdk import Lium
 lium = Lium()
 ```
 
+Signatures below follow Python notation: everything after `*` is keyword-only and
+raises `TypeError` when passed positionally. `lium.exec(pod, "nvidia-smi")` fails —
+it has to be `lium.exec(pod, command="nvidia-smi")`.
+
 ### Discovery
 
 | Method | Description |
 |--------|-------------|
-| `ls(gpu_type=, gpu_count=, lat=, lon=, max_distance_miles=)` | List available executors |
+| `ls(*, gpu_type=, gpu_count=, lat=, lon=, max_distance_miles=)` | List available executors |
 | `ps()` | List active pods |
 | `pod(pod_id)` | Get pod details |
 | `get_executor(executor_id)` | Get executor details |
@@ -1258,31 +1262,31 @@ lium = Lium()
 
 | Method | Description |
 |--------|-------------|
-| `up(executor_id, name=, template_id=, volume_id=, ports=, ssh_keys=)` | Create pod |
+| `up(*, executor_id, name=, template_id=, volume_id=, ports=, ssh_keys=)` | Create pod |
 | `down(pod)` | Stop/delete pod |
 | `rm(pod)` | Alias for `down()` |
 | `reboot(pod, volume_id=)` | Reboot pod |
-| `wait_ready(pod, timeout=)` | Poll until pod is RUNNING |
-| `logs(pod_id, tail=, follow=)` | Stream pod logs |
+| `wait_ready(pod, *, timeout=)` | Poll until pod is RUNNING |
+| `logs(pod_id, *, tail=, follow=)` | Stream pod logs |
 | `edit(pod_id, **kwargs)` | Edit pod template |
 
 ### Remote Execution
 
 | Method | Description |
 |--------|-------------|
-| `exec(pod, command, env=, timeout=)` | Execute command, returns `{"stdout": ..., "stderr": ...}` |
-| `stream_exec(pod, command, env=)` | Stream execution output |
-| `exec_all(pods, command)` | Execute on multiple pods |
+| `exec(pod, *, command, env=)` | Execute command, returns `{"stdout", "stderr", "exit_code", "success"}` |
+| `stream_exec(pod, *, command, env=)` | Stream execution output |
+| `exec_all(pods, *, command, env=, max_workers=)` | Execute on multiple pods |
 | `ssh(pod)` | Get SSH command string |
 
 ### File Transfer
 
 | Method | Description |
 |--------|-------------|
-| `scp(pod, local, remote)` | Copy file to pod |
-| `upload(pod, local, remote)` | Upload (alias for scp) |
-| `download(pod, remote, local)` | Download file from pod |
-| `rsync(pod, local, remote)` | Sync directory |
+| `scp(pod, *, local, remote)` | Copy file to pod |
+| `upload(pod, *, local, remote)` | Upload (alias for scp) |
+| `download(pod, *, remote, local)` | Download file from pod |
+| `rsync(pod, *, local, remote)` | Sync directory |
 
 ### Template Management
 
@@ -1291,7 +1295,7 @@ lium = Lium()
 | `default_docker_template(executor_id)` | Get executor's default template |
 | `create_template(...)` | Create custom template |
 | `update_template(template_id, name=, docker_image=, ...)` | Update template |
-| `switch_template(pod, template_id)` | Change pod's template |
+| `switch_template(pod, *, template_id)` | Change pod's template |
 | `wait_template_ready(template_id, timeout=)` | Wait for template build |
 
 ### Volume Management
@@ -1300,34 +1304,34 @@ lium = Lium()
 |--------|-------------|
 | `volumes()` | List all volumes |
 | `volume(volume_id)` | Get volume info |
-| `volume_create(name, description=)` | Create volume |
-| `volume_update(volume_id, name=, description=)` | Update volume |
+| `volume_create(name, *, description=)` | Create volume |
+| `volume_update(volume_id, *, name=, description=)` | Update volume |
 | `volume_delete(volume_id)` | Delete volume |
 
 ### Backup Management
 
 | Method | Description |
 |--------|-------------|
-| `backup_create(pod, path, frequency_hours=, retention_days=, name=)` | Set up auto-backups |
-| `backup_now(pod, name=)` | Trigger immediate backup |
+| `backup_create(pod, *, path=, frequency_hours=, retention_days=)` | Set up auto-backups |
+| `backup_now(pod, *, name, description=)` | Trigger immediate backup |
 | `backup_config(pod)` | Get backup config |
 | `backup_list()` | List all backups |
 | `backup_logs(pod)` | Get backup execution logs |
 | `backup_delete(config_id)` | Delete backup config |
-| `restore(pod, backup_id, target_path=)` | Restore from backup |
+| `restore(pod, *, backup_id, restore_path=)` | Restore from backup |
 
 ### Pod Scheduling
 
 | Method | Description |
 |--------|-------------|
-| `schedule_termination(pod, termination_time)` | Auto-terminate at specific time |
+| `schedule_termination(pod, *, termination_time)` | Auto-terminate at specific time |
 | `cancel_scheduled_termination(pod)` | Cancel auto-termination |
 
 ### Jupyter
 
 | Method | Description |
 |--------|-------------|
-| `install_jupyter(pod, jupyter_internal_port=)` | Install Jupyter on pod |
+| `install_jupyter(pod, *, jupyter_internal_port)` | Install Jupyter on pod |
 
 ### Account
 
@@ -1356,7 +1360,7 @@ print(result["stdout"])
 
 # Files
 lium.upload(pod, local="train.py", remote="/root/train.py")
-lium.exec(pod, "python /root/train.py")
+lium.exec(pod, command="python /root/train.py")
 lium.download(pod, remote="/root/model.pt", local="./model.pt")
 
 # Backups
