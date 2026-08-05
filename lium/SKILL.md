@@ -68,11 +68,12 @@ lium ssh <pod>                        # connect
 ```
 
 Only create an account when the user asks for one. Ask for their **real email** first — the
-verification link needed for renting is sent there, and the account, its balance and password
+confirmation link needed for renting is sent there, and the account, its balance and password
 recovery are tied to it. Never invent an address, never use a disposable inbox.
 
 `lium signup` prints the generated password — hand it to the user, it is their dashboard login.
-Add `--json` for a machine-readable `{email, password, api_key, ssh_key_configured, next_steps}`.
+Add `--json` for a machine-readable
+`{email, password, api_key, signup_credit_granted, ssh_key_configured, next_steps}`.
 The key is written to `~/.lium/config.ini`, so the account is then indistinguishable from one
 set up with `lium init`.
 
@@ -115,16 +116,64 @@ are cleared. Map the error to the action:
 
 | 403 on rent | Meaning | Action |
 |---|---|---|
-| `"User is not verified"` | The verification link in the welcome email has not been clicked. Only the user can click it — there is no API for it. | Ask the user to click it, then retry. Do not abandon the task. |
-| `"Insufficient balance"` | No usable credit. New accounts get a $5 credit, granted once per IP address. | Tell the user and offer a funding option. |
+| `"User is not verified"` | The confirmation link has not been clicked yet. | Ask the user to click it, then retry — see "Email confirmation" below. Do not abandon the task. |
+| `"Insufficient balance"` | The account balance is zero. | Fund the account — see "Funding options" below. |
 
-Funding options:
+#### Email confirmation
+
+Registration sends **two** mails: `"Welcome to Celium!"` (no link in it) and
+`"Please confirm your email"` — only the second one carries the link. Point the user at that
+subject, and ask them to click the link. That is the normal path.
+
+Two endpoints on `https://lium.io/api` cover the cases where it does not work. Neither needs
+auth; both take JSON:
+
+```bash
+# Mail never arrived / link expired (tokens are valid 24h) — send a fresh one
+curl -sX POST https://lium.io/api/auth/resend-verify-email \
+  -H 'Content-Type: application/json' -d '{"email":"ada@example.com"}'
+# 400 "User doesn't exist." or "Email is already verified." when it does not apply
+
+# User pastes the link instead of clicking it — finish verification from its ?token=
+curl -sX POST https://lium.io/api/auth/verify-email \
+  -H 'Content-Type: application/json' -d '{"token":"<token from the link>"}'
+```
+
+#### The $5 signup credit
+
+New accounts get a $5 credit. It is granted when the platform has the credit enabled **and** no
+other account has signed up from this IP address — nothing about the email domain matters. Do not
+explain a `403 "Insufficient balance"` with the credit: that error only says the balance is zero,
+and the answer to it is to fund the account.
+
+Whether it landed is answered by `signup_credit_granted` in the signup response (also in
+`lium signup --json`). If that field is absent — older CLI or backend — read the balance:
+
+```bash
+lium balance --json   # {"balance_usd": 5.0}
+```
+
+#### Funding options
 
 - Dashboard: https://lium.io/billing
-- Headless invoice: `POST /tmc-pay/create-invoice` with header `X-API-Key: sk_...` returns
-  `deposit_address`, the crypto amount and `expires_at`. Give these to the user to pay from
-  their wallet — do not move funds on their behalf.
-- `lium fund -w default -a 10.0 -y` for users with a Bittensor wallet.
+- Headless invoice: `POST /tmc-pay/create-invoice` with header `X-API-Key: sk_...` and a body of
+  `{"amount": <USD>, "crypto_currency": "...", "crypto_network": "..."}` (all three required).
+  Valid currency/network pairs come from `GET /tmc-pay/currencies` (same API key header). The
+  response carries `deposit_address`, `crypto_amount`, `hosted_invoice_url` and `expires_at` —
+  give these to the user to pay from their wallet, do not move funds on their behalf.
+
+  ```bash
+  # {"currencies": [{"code": "USDT", "network": "tron", ...}, ...]} — pick a pair from here
+  curl -s https://lium.io/api/tmc-pay/currencies -H "X-API-Key: sk_..."
+
+  curl -sX POST https://lium.io/api/tmc-pay/create-invoice -H "X-API-Key: sk_..." \
+    -H 'Content-Type: application/json' \
+    -d '{"amount": 20, "crypto_currency": "USDT", "crypto_network": "tron"}'
+  ```
+
+- `lium fund -w default -a 10.0 -y` for users with a Bittensor wallet — here `-a` is an amount of
+  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves Subnet-51 alpha the
+  user already has staked: `lium fund --alpha -k <hotkey-ss58> -a 10 -y`.
 
 SSH keys need no extra registration — the public key at `ssh.key_path` is registered
 server-side right before renting.
