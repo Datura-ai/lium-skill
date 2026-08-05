@@ -313,7 +313,14 @@ lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 lium ps --format json | jq '.[] | {huid, status, ports}'
 ```
 
-`lium ls` and `lium ps` take `--format json`; `lium balance` takes `--json`. `lium templates` has neither — parse its text output or use the SDK.
+Which command takes what (verified against v0.0.27):
+
+| Command | Flag |
+|---|---|
+| `lium ls`, `lium ps` | `--format table\|json` — no other format, `csv` does not exist |
+| `lium balance`, `lium fund crypto currencies`, `lium fund crypto invoice` | `--json` |
+| `lium provider …` | `--json` on the group, so every provider subcommand takes it |
+| everything else (`templates`, `volumes`, `schedules`, `ssh-keys`, `exec`, `logs`, `bk`, …) | no machine-readable output — parse the text or use the SDK |
 
 ## End-to-End Agent Workflow
 

@@ -52,20 +52,22 @@ lium config set ssh.key_path ~/.ssh/id_ed25519
 List available GPU nodes.
 
 ```bash
-lium ls [GPU_TYPE] [OPTIONS]
-  GPU_TYPE          Filter by GPU type (H100, A100, RTX4090, H200, etc.)
-  --region REGION   Filter by region
-  --min-memory GB   Minimum GPU memory
-  --max-price USD   Maximum price per hour
-  --format FORMAT   Output format (table, json, csv)
+lium ls [OPTIONS]
+  --gpu TYPE            Filter by GPU type (H100, A100, RTX4090, H200, etc.)
+  --count N             Exact GPU count to match
+  --min-cuda VERSION    Minimum CUDA version, e.g. 12.4
+  --lat / --lon / --max-distance   Filter by distance from a point
+  --sort FIELD          download, upload, price_gpu, price_total, loc, id, gpu
+  --limit N             Limit rows shown
+  --format table|json   Output format (there is no csv)
 ```
 
 Examples:
 ```bash
-lium ls                    # all nodes
-lium ls H100              # only H100 GPUs
-lium ls --max-price 2.5   # under $2.50/hour
-lium ls --format json     # JSON output for parsing
+lium ls                     # all nodes
+lium ls --gpu H100          # only H100 GPUs
+lium ls --gpu H100 --count 8  # 8×H100 machines
+lium ls --format json       # JSON output for parsing
 ```
 
 ## lium up
@@ -117,10 +119,9 @@ lium up 1 --name dev-pod -y                      # executor #1 from last ls
 List active pods.
 
 ```bash
-lium ps [OPTIONS]
-  -a, --all         Show all pods including stopped
-  --format FORMAT   Output format (table, json, csv)
-  --sort FIELD      Sort by field (name, status, cost, uptime)
+lium ps [POD_ID] [OPTIONS]
+  POD_ID                Show a single pod (id, huid or name)
+  --format table|json   Output format (there is no csv)
 ```
 
 ## lium ssh
