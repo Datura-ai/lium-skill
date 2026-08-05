@@ -231,19 +231,21 @@ lium ls            # if this works, auth is OK
 
 ### Non-Interactive Pod Creation
 
-Always use `-y` flag and pass all parameters:
+Always use `-y` flag and pass all parameters. Add `--no-ssh` too: without it a
+successful `lium up` ends by opening an interactive SSH session, which stalls an
+agent (`--image` mode streams container logs instead).
 
 ```bash
 # WRONG (interactive):
-lium up              # prompts for executor and template selection
+lium up              # prompts for node and template selection
 lium up 1            # prompts for template selection
 
 # RIGHT (non-interactive):
-lium up --gpu H100 -y                        # auto-selects executor + default template
-lium up --gpu A100 -c 2 --country US -y      # with filters
-lium up --gpu H100 --name my-pod --ttl 6h -y # with name and auto-termination
-lium up --gpu A6000 --image pytorch/pytorch:2.0 -y  # custom docker image
-lium up --gpu H100 --jupyter -y              # with Jupyter
+lium up --gpu H100 -y --no-ssh                        # auto-selects node + default template
+lium up --gpu A100 -c 2 --country US -y --no-ssh      # with filters
+lium up --gpu H100 --name my-pod --ttl 6h -y --no-ssh # with name and auto-termination
+lium up --gpu A6000 --image pytorch/pytorch:2.0 -y    # custom docker image (streams logs)
+lium up --gpu H100 --jupyter -y --no-ssh              # with Jupyter
 ```
 
 ### Non-Interactive Funding
@@ -270,23 +272,33 @@ export PATH="$HOME/.lium/bin:$PATH"  # needed in current shell session
 
 After completing the two-step auth, run `lium ls` to verify. If it returns results, auth is done.
 
-#### `lium ps` Has No `--format json`
+#### An Error Does Not Always Mean a Non-Zero Exit
+
+`lium exec`, `lium rm`, `lium up` and `lium ls` exit non-zero when they fail. The
+rest — `ssh`, `logs`, `reboot`, `scp`, `rsync`, `port-forward`, `update`, the `bk`
+sub-commands — can print `Error: ...` and still exit **0**:
 
 ```bash
-lium ps --format json  # Error: No such option
-lium ps                # correct
+lium ssh no-such-pod-xyz   # prints "No active pods", exits 0
 ```
 
-Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting — not a numeric index.
+Never treat `$?` alone as proof that a step worked. Read the output, or prefer the
+machine-readable modes (`lium ps --format json`, `lium exec --json`) and check the
+result there. Tracked as DAH-2593.
 
-#### Commands Without -y Flag
+#### Pod Targeting — Prefer Names
 
-Not all commands support `-y`. Workaround for interactive commands:
+Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting — not a numeric index; indices shift with every listing.
+
+#### `-y` Exists on the Destructive Commands
+
+`lium rm`, `lium up`, `lium fund`, `lium volumes rm`, `lium bk set/rm/restore` all
+take `-y, --yes`. No piped `yes` is needed:
 
 ```bash
 lium rm my-pod         # will prompt for confirmation
-echo "y" | lium rm my-pod  # workaround for agent use
-echo "y" | lium rm -a      # remove all pods non-interactively
+lium rm my-pod -y      # non-interactive
+lium rm -a -y          # remove all pods non-interactively
 ```
 
 #### Templates
@@ -389,7 +401,7 @@ For reliable failure diagnosis, poll `lium ps` every ~10-30s for the first few m
 
 #### "Executor Not Found" on `lium up <id>`
 
-If an executor is visible on the lium.io dashboard but `lium up <executor_id>` or `lium ls` doesn't show it, the platform's availability filter rejected it. Reasons include: low free disk space, high disk utilization, unresponsive health checks, or missing verification. **`lium ls` is the source of truth for rentable machines** — prefer filtering/selecting from `lium ls` output rather than matching IDs from the website.
+If an executor is visible on the lium.io dashboard but `lium up <node-id>` or `lium ls` doesn't show it, the platform's availability filter rejected it. Reasons include: low free disk space, high disk utilization, unresponsive health checks, or missing verification. **`lium ls` is the source of truth for rentable machines** — prefer filtering/selecting from `lium ls` output rather than matching IDs from the website.
 
 ## CLI Quick Reference
 
@@ -397,7 +409,7 @@ If an executor is visible on the lium.io dashboard but `lium up <executor_id>` o
 
 ```bash
 lium ls                        # all available GPUs (shows table with ★ for best price/perf)
-lium ls H100                   # filter by type
+lium ls --gpu H100             # filter by GPU type (there is no positional argument)
 lium ls --sort download        # sort by download speed (fastest first) — preferred default
 lium ls --sort upload          # sort by upload speed
 lium ls --sort price_gpu       # sort by price per GPU/hour (default)
@@ -412,12 +424,13 @@ lium templates pytorch         # search templates
 
 ```bash
 lium up --gpu H100 -y          # create pod
-lium ps                        # list active pods (no --format json support)
+lium ps                        # list active pods
+lium ps --format json          # machine-readable pod list
 lium ssh my-pod                # SSH into pod
 lium exec my-pod "nvidia-smi"  # run command
 lium exec all "pip install torch"  # batch exec on all pods
-lium rm my-pod                 # stop pod
-lium rm all                    # stop all pods
+lium rm my-pod -y              # stop pod
+lium rm -a -y                  # stop all pods
 ```
 
 ### Streaming Pod Logs
@@ -451,9 +464,12 @@ Always use `--format json` when parsing output programmatically:
 
 ```bash
 lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
+lium ps --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 ```
 
-Note: `lium ps` does NOT support `--format json`.
+`--format [table|json]` exists on `lium ls` and `lium ps`; `lium exec`, `lium fund`,
+`lium balance`, `lium signup` and `lium topup create` take `--json` instead.
+`lium templates` has neither.
 
 ## End-to-End Agent Workflow
 
@@ -481,18 +497,18 @@ lium ls >/dev/null 2>&1 && echo "OK" || echo "Auth failed"
 # 4. Find suitable GPU (sort by speed by default)
 lium ls --gpu H100 --sort download
 
-# 5. Create pod (non-interactive!)
-lium up --gpu H100 --name work-pod --ttl 6h -y
+# 5. Create pod (non-interactive! --no-ssh returns instead of opening a session)
+lium up --gpu H100 --name work-pod --ttl 6h -y --no-ssh
 
-# 6. Wait and verify (note: --format json is NOT supported for lium ps)
-lium ps
+# 6. Wait and verify (read the output, not just the exit code)
+lium ps --format json
 
 # 7. Use the pod
 lium scp work-pod ./code.py
 lium exec work-pod "python /root/code.py"
 
 # 8. Cleanup
-echo "y" | lium rm work-pod
+lium rm work-pod -y
 ```
 
 ## Detailed References
