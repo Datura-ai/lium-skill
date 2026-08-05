@@ -239,7 +239,7 @@ List active pods. The optional positional narrows the listing to one pod.
 
 ```bash
 lium ps [OPTIONS] [POD_ID]
-  POD_ID                 Show a single pod (name/ID or index)
+  POD_ID                 Show a single pod — name, HUID or UUID only, NOT an index
   --format [table|json]  Output format; 'json' goes to stdout, suitable for jq
 ```
 
@@ -352,7 +352,7 @@ Stream logs from a pod.
 
 ```bash
 lium logs [OPTIONS] POD_ID
-  POD_ID              Pod name/ID or index
+  POD_ID              Pod name, HUID or UUID — NOT an index
   -n, --tail INTEGER  Number of lines to show from the end of the logs
   -f, --follow        Follow log output
 ```
@@ -524,7 +524,9 @@ lium fund --alpha -k <hotkey-ss58> -a 25 -y --json   # -a is USD when --alpha
 Top up the balance with a stablecoin.
 
 ```bash
-lium topup currencies                   # list supported stablecoins and networks
+lium topup currencies [OPTIONS]         # list supported stablecoins and networks
+  --refresh            Bypass the cache and re-fetch
+  --json               Print machine-readable JSON
 lium topup create [OPTIONS]             # create an invoice, print the deposit address
   -a, --amount FLOAT   Top-up amount in USD (required)
   -c, --currency TEXT  Stablecoin code, e.g. USDT (required)
@@ -541,7 +543,13 @@ lium topup create -a 20 -c USDT -n tron --json
 
 ## lium mine
 
-Renter-side mining helper.
+Bootstrap a Subnet-51 **provider** machine: clone `Datura-ai/lium-io` into
+`compute-subnet`, install the executor tooling, write `neurons/executor/.env` and
+start the executor container. It runs on the GPU host you are contributing, not
+on a renter's laptop.
+
+`lium provider --help` calls this "renter workflows" — that blurb is wrong; the
+code clones and starts a miner executor.
 
 ```bash
 lium mine [OPTIONS]
@@ -578,10 +586,13 @@ Sub-commands: `billing`, `config`, `machine`, `machine-request`, `node`, `portal
 Prepare Docker storage on a host for LIUM GPU splitting.
 
 ```bash
-lium gpu-splitting check [--device PATH]  # inspect the host, print the plan, change nothing
-lium gpu-splitting setup                  # end-to-end Docker storage setup
-lium gpu-splitting verify                 # verify the host meets the requirements
+lium gpu-splitting check [--device PATH]        # inspect the host, print the plan, change nothing
+lium gpu-splitting setup [--device PATH] --yes  # end-to-end Docker storage setup
+lium gpu-splitting verify                       # verify the host meets the requirements
 ```
+
+`setup` is the only one that changes the host, and it stops on an interactive
+confirmation of the plan — pass `--yes` from a script.
 
 ## Batch Operations
 
@@ -599,16 +610,23 @@ lium rm 1,2,3 -y
 ## Pod Targeting
 
 The pod argument is called `TARGET` (single) or `TARGETS` (several) in the CLI's
-own help; `logs`, `ps` and the `bk` sub-commands call it `POD_ID`. All of them
-accept:
+own help; `logs`, `ps` and the `bk` sub-commands call it `POD_ID`. What each
+form accepts is **not** uniform:
 
-- **Name / ID**: `lium ssh eager-wolf-aa`
-- **Index**: `lium ssh 1` (from the last `lium ps` output)
-- **Comma list** (`TARGETS` only): `lium exec 1,2,3 "cmd"`
-- **All** (`TARGETS` only): `lium exec all "cmd"`
+| Form | Example | Accepted by |
+|------|---------|-------------|
+| Name / HUID / UUID | `lium ssh eager-wolf-aa` | every command |
+| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *` — **not** `ps` and **not** `logs` |
+| Comma list | `lium exec 1,2,3 "cmd"` | `TARGETS` commands only |
+| All | `lium exec all "cmd"` | `TARGETS` commands only |
 
-Indices come from the most recent listing, so an agent should run `lium ps
---format json` and use names when anything ran in between.
+`lium ps 1` and `lium logs 1` match the literal string `1` against pod names and
+IDs; they do not resolve indices, so they report the pod as not found unless a
+pod is actually named `1`.
+
+Indices come from the most recent listing and shift whenever anything is created
+or removed. Prefer names: read them once with `lium ps --format json` and pass
+those.
 
 ## Environment Variables
 
@@ -637,11 +655,20 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | 4 | SSH error |
 | 5 | Pod not found |
 
-⚠️ **The exit code alone is not proof of success.** Only `exec`, `rm`, `up` and
-`ls` reliably exit non-zero on failure. Elsewhere — `ssh`, `logs`, `reboot`,
-`scp`, `rsync`, `port-forward`, `update`, the `bk` sub-commands — a command can
-print `Error: ...` and still exit **0**. Always read the output, or use
-`--format json` / `--json` where it exists, instead of branching on `$?` alone.
-Tracked as **DAH-2593**.
+⚠️ **The exit code alone is not proof of success.** Only three commands are
+reliable:
+
+- `lium exec` — exits with the remote command's code, `5` when no pod matched,
+  `2` on a bad argument or unreadable script;
+- `lium rm` — `5` when nothing matched `TARGETS`;
+- `lium up` — `1` when node selection, renting or readiness fails, `2` on a bad
+  argument, `4` when SSH is unavailable.
+
+**Everything else can print `Error: ...` and still exit 0** — including
+`lium ls`, whose API and authentication failures are swallowed the same way as in
+`ssh`, `logs`, `reboot`, `scp`, `rsync`, `port-forward`, `update` and the `bk`
+sub-commands. So `lium ls >/dev/null && echo OK` prints `OK` with a revoked API
+key. Read the output, or use `--format json` / `--json` where it exists, instead
+of branching on `$?` alone. Tracked as **DAH-2593**.
 
 Codes 3 and 6 exist in the source but no command produces them today.
