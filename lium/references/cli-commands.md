@@ -1,10 +1,15 @@
 # Lium CLI Command Reference
 
+Written against `lium --version` **0.0.29**. Every flag below appears in that
+binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
+`lium <command> --help` is the authority, not this file.
+
 ## Table of Contents
 
 - [Global Options](#global-options)
 - [lium signup](#lium-signup)
 - [lium init](#lium-init)
+- [lium balance](#lium-balance)
 - [lium ls](#lium-ls)
 - [lium up](#lium-up)
 - [lium ps](#lium-ps)
@@ -13,16 +18,22 @@
 - [lium scp](#lium-scp)
 - [lium rsync](#lium-rsync)
 - [lium rm](#lium-rm)
-- [lium templates](#lium-templates)
-- [lium fund](#lium-fund)
-- [lium config](#lium-config)
 - [lium logs](#lium-logs)
 - [lium port-forward](#lium-port-forward)
 - [lium reboot](#lium-reboot)
+- [lium update](#lium-update)
+- [lium templates](#lium-templates)
 - [lium volumes](#lium-volumes)
 - [lium bk (backups)](#lium-bk-backups)
 - [lium schedules](#lium-schedules)
+- [lium ssh-keys](#lium-ssh-keys)
+- [lium config](#lium-config)
 - [lium theme](#lium-theme)
+- [lium fund](#lium-fund)
+- [lium topup](#lium-topup)
+- [lium mine](#lium-mine)
+- [lium provider](#lium-provider)
+- [lium gpu-splitting](#lium-gpu-splitting)
 - [Batch Operations](#batch-operations)
 - [Pod Targeting](#pod-targeting)
 - [Environment Variables](#environment-variables)
@@ -30,12 +41,16 @@
 
 ## Global Options
 
+The root command takes exactly two options:
+
 ```
---help        Show help message
---version     Display CLI version
---config PATH Use alternate config file
---debug       Enable debug output
+--version   Show the version and exit
+--help      Show this message and exit
 ```
+
+There is no `--config` and no `--debug` flag. Debug output is switched on with
+the `LIUM_DEBUG=1` environment variable, and the config file location comes from
+`lium config path`.
 
 ## lium signup
 
@@ -52,7 +67,8 @@ lium signup [OPTIONS]
 ```
 
 The password can also come from the `LIUM_SIGNUP_PASSWORD` environment variable — `--password`
-wins when both are set. Whatever its origin, it is always reported back to the caller.
+wins when both are set. Prefer the variable: a flag value is left behind in the shell history
+and in `ps` output. Whatever its origin, the password is always reported back to the caller.
 
 Ask the user for their **real** email — the account, its balance, password recovery and the
 confirmation link needed for renting are all tied to it. Never invent an address.
@@ -78,6 +94,7 @@ Examples:
 ```bash
 lium signup --email ada@example.com
 lium signup --email ada@example.com --name Ada --json
+LIUM_SIGNUP_PASSWORD=... lium signup --email ada@example.com
 ```
 
 `--json` output:
@@ -102,323 +119,531 @@ lium signup --email ada@example.com --name Ada --json
 
 ## lium init
 
-Interactive setup wizard for a user who **already has an account** — `lium init` cannot create
-one, use [`lium signup`](#lium-signup) for that. **NOT suitable for agent/scripted use** in its
-plain form — but `lium init --no-browser` / `lium init --session <ID>` is the headless two-step.
+Initialize the CLI for a user who **already has an account** — `lium init` cannot create
+one, use [`lium signup`](#lium-signup) for that. Plain `lium init` opens a browser and is
+**not suitable for agent use**; the `--no-browser` / `--session` pair is the headless two-step.
 
-For an agent that already holds an API key, write config directly:
 ```bash
-mkdir -p ~/.lium
+lium init [OPTIONS]
+  --no-browser    Print the auth URL + session ID instead of opening a browser (step 1)
+  --session ID    Verify the auth session and save the API key (step 2)
+```
+
+For an agent that already holds an API key, write the config directly instead:
+```bash
 lium config set api.api_key YOUR_KEY
 lium config set ssh.key_path ~/.ssh/id_ed25519
 ```
 
-## lium ls
+## lium balance
 
-List available GPU nodes.
+Show the current account balance.
 
 ```bash
-lium ls [GPU_TYPE] [OPTIONS]
-  GPU_TYPE          Filter by GPU type (H100, A100, RTX4090, H200, etc.)
-  --region REGION   Filter by region
-  --min-memory GB   Minimum GPU memory
-  --max-price USD   Maximum price per hour
-  --format FORMAT   Output format (table, json, csv)
+lium balance [OPTIONS]
+  --json   Print machine-readable JSON
+```
+
+## lium ls
+
+List available GPU nodes. There is no positional argument — filter with `--gpu`.
+
+```bash
+lium ls [OPTIONS]
+  --gpu TEXT              Filter by GPU type, e.g. A100
+  --count INTEGER         Exact GPU count to match (e.g. 1, 8)
+  --min-cuda FLOAT        Minimum CUDA version, e.g. 12.4
+  --lat FLOAT             Latitude for distance filtering
+  --lon FLOAT             Longitude for distance filtering
+  --max-distance INTEGER  Maximum distance in miles from --lat/--lon
+  --sort FIELD            price_gpu | price_total | loc | id | gpu | download |
+                          upload | price_per_gpu_hour | price_per_hour
+                          (an explicit --sort wins over the ★ optimal ordering)
+  --limit INTEGER         Limit the number of rows shown
+  --format [table|json]   Output format; 'json' goes to stdout, suitable for jq
 ```
 
 Examples:
 ```bash
-lium ls                    # all nodes
-lium ls H100              # only H100 GPUs
-lium ls --max-price 2.5   # under $2.50/hour
-lium ls --format json     # JSON output for parsing
+lium ls                         # all nodes
+lium ls --gpu H100              # only H100 nodes
+lium ls --gpu H100 --count 8    # only 8×H100 nodes
+lium ls --format json           # JSON output for parsing
+lium ls --sort price_per_gpu_hour --limit 10
 ```
 
 ## lium up
 
-Create a new pod. **Always use `-y` flag for non-interactive (agent) usage.**
+Create a new pod. **Always pass `-y` for non-interactive (agent) usage.**
 
 ```bash
-lium up [EXECUTOR_ID] [OPTIONS]
-  EXECUTOR_ID                 Executor UUID, HUID, or index from last lium ls
-  -n, --name NAME             Custom pod name
-  -t, --template_id ID        Template ID
-  -v, --volume SPEC           Volume: id:<HUID> or new:name=<NAME>[,desc=<DESC>]
-  -y, --yes                   Skip confirmation (REQUIRED for agent use)
-  --gpu TYPE                  Filter by GPU type (H200, A6000, etc.)
-  -c, --count NUM             Filter by GPU count per pod
-  --country CODE              Filter by ISO country code (US, FR, etc.)
-  -p, --ports NUM             Require ≥NUM ports AND allocate NUM ports
-  --ttl DURATION              Auto-terminate after duration (6h, 45m, 2d)
-  --until TIME                Auto-terminate at time ("today 23:00", "tomorrow 01:00")
-  --jupyter                   Install Jupyter Notebook (auto-selects port)
-  --image IMAGE               Docker image (e.g., pytorch/pytorch:2.0)
-  -e, --env KEY=VALUE         Environment variables (repeatable)
-  --cmd TEXT                  Command to run in container
+lium up [OPTIONS] [NODE_ID]
+  NODE_ID                     Node UUID, HUID, or index from the last `lium ls`.
+                              Optional — omit it and the filters below auto-select
+                              the best node. (`lium up --help` prints NODE_ID without
+                              brackets; the argument is optional all the same.)
+  -n, --name TEXT             Custom pod name
+  -t, --template_id TEXT      Template ID
+  -v, --volume TEXT           Volume spec: 'id:<HUID>' or 'new:name=<NAME>[,desc=<DESC>]'
+  -y, --yes                   Skip the confirmation prompt (REQUIRED for agent use)
+  --gpu TEXT                  Filter nodes by GPU type (e.g. H200, A6000)
+  -c, --count INTEGER         Number of GPUs per pod
+  --country TEXT              Filter nodes by ISO country code (e.g. US, FR)
+  -p, --ports INTEGER         Minimum number of available ports required
+  --ttl TEXT                  Auto-terminate after a duration (6h, 45m, 2d)
+  --until TEXT                Auto-terminate at a local time ("today 23:00",
+                              "tomorrow 01:00", "2025-10-20 15:30")
+  --jupyter                   Install Jupyter Notebook (auto-selects a port)
+  --no-ssh                    Create the pod and return instead of opening an SSH session
+  --image TEXT                Docker image to run (e.g. pytorch/pytorch:2.0)
+  --internal-ports TEXT       Internal ports to expose (comma-separated: 22,8000,8080)
+  --dockerfile FILE           Build the pod image from this Dockerfile
+                              (mutually exclusive with --image / --template_id)
+  -e, --env TEXT              Environment variables (KEY=VALUE), repeatable
   --entrypoint TEXT           Container entrypoint
-  --internal-ports TEXT       Internal ports to expose (comma-separated)
+  --cmd TEXT                  Command to run in the container
+  --ssh-name TEXT             Name to register a new SSH key under
+                              (default: cli-<user>@<hostname>)
+  --volume-encryption / --no-volume-encryption
+                              Encrypt the local volume when supported (on by default)
 ```
+
+`--no-ssh` matters for agents: without it `lium up` ends by opening an interactive
+SSH session (or, with `--image`, by streaming container logs).
 
 Examples:
 ```bash
 # Non-interactive (for agents):
-lium up --gpu H100 -y                            # auto-select + default template
-lium up --gpu H200 --country US --name train -y  # with filters
-lium up --gpu H100 --ttl 6h --jupyter -y         # with TTL + Jupyter
+lium up --gpu H100 -y --no-ssh                    # auto-select + default template
+lium up --gpu H200 --country US --name train -y --no-ssh
+lium up --gpu H100 --ttl 6h --jupyter -y --no-ssh
 
 # Docker-run style (streams logs instead of SSH):
 lium up --gpu A4000 --image pytorch/pytorch:2.0 -y
 lium up --gpu H100 --image vllm/vllm-openai:latest -e HF_TOKEN=xxx -y
 
-# With volumes:
-lium up --gpu H100 -v id:brave-fox-3a -y         # attach existing volume
-lium up --gpu H100 -v new:name=data -y           # create + attach volume
+# Custom Dockerfile, built remotely:
+lium up --gpu A4000 --dockerfile ./Dockerfile -y
 
-# Specific executor:
-lium up 1 --name dev-pod -y                      # executor #1 from last ls
+# With volumes:
+lium up --gpu H100 -v id:brave-fox-3a -y          # attach an existing volume
+lium up --gpu H100 -v new:name=data -y            # create + attach a volume
+
+# Specific node:
+lium up 1 --name dev-pod -y                       # node #1 from the last ls
 ```
 
 ## lium ps
 
-List active pods.
+List active pods. The optional positional narrows the listing to one pod.
 
 ```bash
-lium ps [OPTIONS]
-  -a, --all         Show all pods including stopped
-  --format FORMAT   Output format (table, json, csv)
-  --sort FIELD      Sort by field (name, status, cost, uptime)
+lium ps [OPTIONS] [POD_ID]
+  POD_ID                 Show a single pod — name, HUID or UUID only, NOT an index
+  --format [table|json]  Output format; 'json' goes to stdout, suitable for jq
 ```
+
+`lium ps --format json` **is supported** and is the way an agent should read pod
+state. There is no `-a/--all` and no `--sort`.
 
 ## lium ssh
 
-SSH into a pod.
+Open an interactive SSH session to a pod. It takes no options — to run a command
+and exit, use [`lium exec`](#lium-exec).
 
 ```bash
-lium ssh POD [OPTIONS]
-  POD               Pod name or index from lium ps
-  --command CMD     Execute command and exit
-  --port PORT       SSH port (default: 22)
-  --key PATH        Use specific SSH key
+lium ssh TARGET
+  TARGET   Pod name/ID (eager-wolf-aa) or index from `lium ps` (1, 2, 3)
 ```
 
 ## lium exec
 
-Execute command on pod(s).
+Execute commands on one or more pods. **This is the command an agent uses to run
+things remotely** — it exits with the remote command's exit code, so
+`lium exec <pod> "cmd" && next-step` behaves the way a caller expects.
 
 ```bash
-lium exec POD COMMAND [OPTIONS]
-  POD               Pod name, index, comma-separated list, or "all"
-  COMMAND           Command to execute (quote multi-word commands)
-  --timeout SECONDS Command timeout
-  --output FILE     Save output to file
+lium exec [OPTIONS] TARGETS [COMMAND]
+  TARGETS            Pod name/ID, index, comma-separated list, or "all"
+  COMMAND            Command to execute (quote multi-word commands)
+  -s, --script TEXT  Execute a local script file on the pod
+  -e, --env TEXT     Set environment variables (KEY=VALUE)
+  --json             Print machine-readable JSON (stdout, stderr, exit_code)
 ```
 
 Examples:
 ```bash
 lium exec my-pod "python train.py"
-lium exec 1 "nvidia-smi" --output gpu.txt
-lium exec all "pip install numpy"
+lium exec 1 "python --version"
+lium exec 1 "nvidia-smi"
+lium exec 1,2,3 "uptime"
+lium exec all "df -h"
+lium exec 1 --script setup.sh
+lium exec 1 -e API_KEY=xyz "python app.py"
+lium exec 1 --json "python train.py"
 ```
+
+There is no `--timeout` and no `--output`; redirect the output in the shell
+(`lium exec 1 "nvidia-smi" > gpu.txt`).
 
 ## lium scp
 
-Copy files to/from pods.
+Copy files between the local machine and pods. Upload is the default; `-d` flips
+the direction.
 
 ```bash
-lium scp POD LOCAL_FILE [REMOTE_PATH] [OPTIONS]
-  POD               Pod name, index, comma-separated list, or "all"
-  LOCAL_FILE        Local file to copy
-  REMOTE_PATH       Destination path (default: /root/)
-  -r, --recursive   Copy directories recursively
-  -p, --preserve    Preserve file attributes
-  -d                Download mode (pod → local)
+lium scp [OPTIONS] TARGETS SOURCE_PATH [DESTINATION_PATH]
+  TARGETS           Pod name/ID, index, comma-separated list, or "all"
+  SOURCE_PATH       Local file (upload) or remote path (download)
+  DESTINATION_PATH  Optional; for multiple pods a download destination must be a directory
+  -d, --download    Download from the pods to the local machine
 ```
 
 Examples:
 ```bash
-lium scp my-pod ./script.py                 # upload to /root/
-lium scp 1 ./data.csv /root/datasets/       # specific destination
-lium scp all ./config.json                  # upload to all pods
-lium scp my-pod ./folder -r                 # directory upload
+lium scp 1 ./script.py                     # upload to ~/script.py on pod #1
+lium scp eager-wolf-aa ./data.csv ~/data/  # upload into a directory
+lium scp all ./config.json                 # upload to every pod
+lium scp 2 /root/output.log ./outputs -d   # download from pod #2 into ./outputs/
 ```
+
+There is no `-r/--recursive` and no `-p/--preserve`; use
+[`lium rsync`](#lium-rsync) for directories.
 
 ## lium rsync
 
-Synchronize directories to pods.
+Sync a directory to pods with rsync. It takes no options.
 
 ```bash
-lium rsync POD LOCAL_DIR [REMOTE_PATH] [OPTIONS]
-  POD               Pod name, index, list, or "all"
-  LOCAL_DIR         Local directory to sync
-  REMOTE_PATH       Destination path
-  --delete          Delete files not in source
-  --exclude PATTERN Exclude files matching pattern
-  --dry-run         Show what would be synced
+lium rsync TARGETS LOCAL_PATH [REMOTE_PATH]
+  TARGETS      Pod name/ID, index, comma-separated list, or "all"
+  LOCAL_PATH   Local directory to sync
+  REMOTE_PATH  Optional destination path
 ```
 
 ## lium rm
 
-Remove/stop pods. **No `-y` flag** — use `echo "y" |` for non-interactive usage.
+Remove (terminate) pods. Removal is irreversible. The command exits non-zero when
+nothing matched `TARGETS`, so a typo cannot look like a successful teardown.
 
 ```bash
-lium rm POD [POD...] [OPTIONS]
-  POD               Pod name(s), indices, or "all"
-  -a, --all         Remove all pods
-  --in TEXT          Remove pods matching name pattern
-  --at TEXT          Remove pods on specific executor
+lium rm [OPTIONS] [TARGETS]
+  TARGETS    Pod name(s)/ID(s), index/indices, comma-separated list, or "all"
+  -a, --all  Remove all active pods
+  -y, --yes  Skip the confirmation prompt
+  --in TEXT  Schedule the removal after a duration (e.g. 6h)
+  --at TEXT  Schedule the removal at a time (e.g. "tomorrow 01:00")
 ```
 
-**Agent usage** (non-interactive):
+`--in` and `--at` **schedule** a removal rather than filtering which pods to
+remove; cancel a scheduled one with [`lium schedules rm`](#lium-schedules).
+
+**Agent usage** — `-y` exists, no piped `yes` needed:
 ```bash
-echo "y" | lium rm my-pod       # single pod
-echo "y" | lium rm -a           # all pods
-echo "y" | lium rm 1,2,3        # multiple by index
-```
-
-## lium templates
-
-List available Docker templates. No `--format json` support.
-
-```bash
-lium templates [SEARCH]
-  SEARCH            Text search to filter templates (e.g. "pytorch", "tensorflow")
-```
-
-**Notes**:
-- Without `--template_id` in `lium up`, the default **PyTorch (CUDA)** template is used — fastest to start
-- Default Docker-in-Docker (dind) image: `daturaai/dind`
-
-## lium fund
-
-Fund account with TAO from Bittensor wallet. **Always use `-y` for agent use.**
-
-```bash
-lium fund [OPTIONS]
-  -w, --wallet NAME   Wallet name (REQUIRED for non-interactive)
-  -a, --amount AMOUNT Amount of TAO (REQUIRED for non-interactive)
-  -y, --yes           Skip confirmation (REQUIRED for agent use)
-```
-
-## lium config
-
-Manage configuration.
-
-```bash
-lium config show                         # display all config
-lium config get api.api_key             # get specific value
-lium config set ssh.key_path ~/.ssh/key  # set value
-lium config edit                         # open in editor
+lium rm my-pod -y        # single pod
+lium rm -a -y            # all pods
+lium rm 1,2,3 -y         # several by index
+lium rm my-pod --in 6h   # schedule removal in six hours
 ```
 
 ## lium logs
 
-Stream pod logs.
+Stream logs from a pod.
 
 ```bash
-lium logs POD [OPTIONS]
-  -f              Follow log output
-  -n NUM          Number of lines to show
-```
-
-## lium port-forward
-
-Forward local port to pod. Useful for accessing Jupyter, TensorBoard, or other web services.
-
-```bash
-lium port-forward POD PORT [OPTIONS]
-  POD   Pod name or index
-  PORT  Remote port to forward
+lium logs [OPTIONS] POD_ID
+  POD_ID              Pod name, HUID or UUID — NOT an index
+  -n, --tail INTEGER  Number of lines to show from the end of the logs
+  -f, --follow        Follow log output
 ```
 
 Examples:
 ```bash
-lium port-forward my-pod 8888    # forward Jupyter (localhost:8888)
-lium port-forward 1 6006         # forward TensorBoard
+lium logs abc123           # last 100 lines
+lium logs abc123 -n 50     # last 50 lines
+lium logs abc123 -f -n 10  # follow, with 10 lines of history
+```
+
+## lium port-forward
+
+Forward a local port to a pod's internal port. Useful for Jupyter, TensorBoard and
+other web services.
+
+```bash
+lium port-forward [OPTIONS] TARGET PORT
+  TARGET                    Pod name/ID or index
+  PORT                      The internal port on the pod to forward to
+  -l, --local-port INTEGER  Local port to bind (defaults to the same as PORT)
+```
+
+Examples:
+```bash
+lium port-forward my-pod 8888     # localhost:8888 -> pod's 8888
+lium port-forward 1 8000 -l 3000  # localhost:3000 -> pod's 8000
 ```
 
 ## lium reboot
 
-Reboot a pod.
+Reboot pods.
 
 ```bash
-lium reboot POD [OPTIONS]
-  -v, --volume SPEC  Attach volume on reboot
+lium reboot [OPTIONS] [TARGETS]
+  TARGETS           Pod name(s)/ID(s), index/indices, or "all"
+  -a, --all         Reboot all active pods
+  --volume-id TEXT  Volume ID to attach when rebooting
 ```
+
+A reboot re-creates the pod: everything outside an attached volume is lost.
+
+## lium update
+
+Update the configuration of a running pod.
+
+```bash
+lium update [OPTIONS] TARGET
+  TARGET             Pod name/ID or index
+  --jupyter INTEGER  Install Jupyter Notebook on the given internal port
+```
+
+## lium templates
+
+List available Docker templates and images. It takes no options.
+
+```bash
+lium templates [SEARCH]
+  SEARCH   Text search to filter templates (e.g. "pytorch", "tensorflow")
+```
+
+**Notes**:
+- Without `--template_id`, `lium up` uses the default **PyTorch (CUDA)** template — fastest to start
+- Default Docker-in-Docker (dind) image: `daturaai/dind`
 
 ## lium volumes
 
 Manage persistent volumes.
 
 ```bash
-lium volumes list                        # list all volumes
-lium volumes new NAME [OPTIONS]          # create volume
-  --desc DESCRIPTION
-lium volumes rm VOLUME                   # delete volume
+lium volumes list                     # list all volumes
+lium volumes new NAME [-d DESC]       # create a volume (-d, --desc)
+lium volumes rm INDICES [-y, --yes]   # remove by index from the last `lium volumes list`
 ```
+
+`volumes rm` takes **indices from the previous listing**, not names or HUIDs — run
+`lium volumes list` first.
 
 ## lium bk (backups)
 
-Manage pod backups.
+Manage pod backup configurations. `POD_ID` is a pod name/ID or an index from
+`lium ps`.
 
 ```bash
-lium bk show POD              # show backup config
-lium bk set POD PATH          # configure auto-backups
-lium bk now POD               # trigger immediate backup
-lium bk logs POD              # view backup logs
-lium bk restore POD BACKUP_ID # restore from backup
-lium bk rm POD                # remove backup config
+lium bk show POD_ID                   # show the backup config
+lium bk set POD_ID [OPTIONS]          # set or update it
+  --path TEXT    Backup path (default: /root)
+  --every TEXT   Backup frequency (1h, 6h, 24h)
+  --keep TEXT    Retention period (1d, 7d, 30d)
+  -y, --yes      Skip the confirmation prompt
+lium bk now POD_ID [OPTIONS]          # trigger an immediate backup
+  -n, --name TEXT         Backup name (e.g. 'pre-release')
+  -d, --description TEXT  Backup description
+lium bk logs [POD_ID] [--id ID]       # backup logs, or details of one backup
+lium bk restore POD_ID --id ID        # restore a backup (--id is required)
+  --to TEXT      Restore path (default: /root)
+  -y, --yes      Skip the confirmation prompt
+lium bk restore-logs [POD_ID] [--id ID]
+lium bk rm POD_ID [-y]                # remove the backup config
 ```
+
+`--path` on `bk set` is a flag, not a positional: `lium bk set 1 --path /root --every 6h --keep 7d`.
 
 ## lium schedules
 
-Manage scheduled terminations.
+Manage scheduled pod terminations (the ones created by `lium rm --in/--at` and by
+`lium up --ttl/--until`).
 
 ```bash
-lium schedules list            # list scheduled terminations
-lium schedules rm POD          # cancel scheduled termination
+lium schedules list       # list all pods with scheduled terminations
+lium schedules rm INDICES # cancel by index from the listing
+```
+
+## lium ssh-keys
+
+Manage the SSH public keys registered with Lium.
+
+```bash
+lium ssh-keys list   # list the keys registered with Lium
+lium ssh-keys sync   # register every local SSH pubkey that isn't on Lium yet
+```
+
+## lium config
+
+Manage the CLI configuration (`~/.lium/config.ini`).
+
+```bash
+lium config show                          # display the entire configuration
+lium config get api.api_key               # get one value
+lium config set ssh.key_path ~/.ssh/key   # set one value (interactive without VALUE)
+lium config unset api.api_key             # remove one value
+lium config path                          # print the config file path
+lium config reset [--confirm]             # reset to defaults
+lium config edit                          # open in the default editor
 ```
 
 ## lium theme
 
-Change CLI color theme.
+Set the CLI color theme. The argument is required and accepts only two values.
 
 ```bash
-lium theme [THEME]   # interactive if no theme specified
+lium theme {dark|light}
 ```
 
-Available: default, monokai, solarized, dracula, nord.
+## lium fund
+
+Fund the account with TAO — or with free Subnet-51 alpha stake — from a Bittensor
+wallet. **Always pass `-y` for agent use.**
+
+```bash
+lium fund [OPTIONS]
+  -w, --wallet TEXT  Bittensor wallet name to fund from
+  -a, --amount TEXT  Amount to fund with (TAO; USD when --alpha)
+  --alpha            Fund with free Subnet-51 alpha stake
+  -k, --hotkey TEXT  Origin hotkey the alpha is staked under — SS58 address or
+                     wallet hotkey name (required with --alpha)
+  --json             Print machine-readable JSON
+  -y, --yes          Skip confirmation prompts
+```
+
+Examples:
+```bash
+lium fund -w default -a 1.5 -y
+lium fund --alpha -k <hotkey-ss58> -a 25 -y --json   # -a is USD when --alpha
+```
+
+## lium topup
+
+Top up the balance with a stablecoin.
+
+```bash
+lium topup currencies [OPTIONS]         # list supported stablecoins and networks
+  --refresh            Bypass the cache and re-fetch
+  --json               Print machine-readable JSON
+lium topup create [OPTIONS]             # create an invoice, print the deposit address
+  -a, --amount FLOAT   Top-up amount in USD (required)
+  -c, --currency TEXT  Stablecoin code, e.g. USDT (required)
+  -n, --network TEXT   Network, e.g. tron (required)
+  --json               Print machine-readable JSON
+```
+
+Send exactly the returned `crypto_amount` to the deposit address on that network;
+the balance is credited once the transfer confirms.
+
+```bash
+lium topup create -a 20 -c USDT -n tron --json
+```
+
+## lium mine
+
+Bootstrap a Subnet-51 **provider** machine: clone `Datura-ai/lium-io` into
+`compute-subnet`, install the executor tooling, write `neurons/executor/.env` and
+start the executor container. It runs on the GPU host you are contributing, not
+on a renter's laptop.
+
+`lium provider --help` calls this "renter workflows" — that blurb is wrong; the
+code clones and starts a miner executor.
+
+```bash
+lium mine [OPTIONS]
+  -k, --hotkey TEXT  Miner hotkey SS58 address
+  -d, --dir TEXT     Target directory
+  -b, --branch TEXT  Branch to install from
+  -a, --auto         Run without prompting
+  -v, --verbose      Show the plan banner
+```
+
+## lium provider
+
+Provider-side commands for Subnet 51 mining — a different persona from `lium mine`.
+Hotkey registration on SN51 itself is done with `btcli subnet register`, not here.
+
+```bash
+lium provider [OPTIONS] COMMAND [ARGS]...
+  -w, --coldkey TEXT  Bittensor coldkey (wallet) name; falls back to
+                      LIUM_PROVIDER_COLDKEY, then `provider.coldkey` in the config
+  -k, --hotkey TEXT   Hotkey name on that coldkey; falls back to
+                      LIUM_PROVIDER_HOTKEY, then `provider.hotkey`
+  --portal-url TEXT   Override the lium-miner-portal base URL
+  --json              Machine-readable JSON (one envelope per command)
+  --debug             Error context on stderr; verbose logging
+  -y, --yes           Auto-confirm the persona gate for spend-affecting subcommands
+  --dry-run           Skip irreversible subprocess calls (e.g. ssh), report intent only
+```
+
+Sub-commands: `billing`, `config`, `machine`, `machine-request`, `node`, `portal`,
+`status`, `sync`. Run `lium provider <sub> --help` for their flags.
+
+## lium gpu-splitting
+
+Prepare Docker storage on a host for LIUM GPU splitting.
+
+```bash
+lium gpu-splitting check [--device PATH]        # inspect the host, print the plan, change nothing
+lium gpu-splitting setup [--device PATH] --yes  # end-to-end Docker storage setup
+lium gpu-splitting verify                       # verify the host meets the requirements
+```
+
+`setup` is the only one that changes the host, and it stops on an interactive
+confirmation of the plan — pass `--yes` from a script.
 
 ## Batch Operations
 
-Many commands support batch operations via comma-separated targets or `all`:
+`exec`, `scp`, `rsync`, `rm` and `reboot` take several targets at once, as a
+comma-separated list or `all`:
 
 ```bash
 lium exec 1,2,3 "apt update"
 lium exec all "nvidia-smi"
 lium scp all ./requirements.txt
 lium rsync all ./project
+lium rm 1,2,3 -y
 ```
 
 ## Pod Targeting
 
-Pods accept these identifiers:
-- **Name**: `lium ssh my-pod`
-- **Index**: `lium ssh 1` (from `lium ps` output)
-- **Comma list**: `lium exec 1,2,3 "cmd"`
-- **All**: `lium exec all "cmd"`
+The pod argument is called `TARGET` (single) or `TARGETS` (several) in the CLI's
+own help; `logs`, `ps` and the `bk` sub-commands call it `POD_ID`. What each
+form accepts is **not** uniform:
+
+| Form | Example | Accepted by |
+|------|---------|-------------|
+| Name / HUID / UUID | `lium ssh eager-wolf-aa` | every command |
+| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *` — **not** `ps` and **not** `logs` |
+| Comma list | `lium exec 1,2,3 "cmd"` | `TARGETS` commands only |
+| All | `lium exec all "cmd"` | `TARGETS` commands only |
+
+`lium ps 1` and `lium logs 1` match the literal string `1` against pod names and
+IDs; they do not resolve indices, so they report the pod as not found unless a
+pod is actually named `1`.
+
+Indices come from the most recent listing and shift whenever anything is created
+or removed. Prefer names: read them once with `lium ps --format json` and pass
+those.
 
 ## Environment Variables
 
 ```bash
-LIUM_API_KEY=xyz lium ls       # override API key
-LIUM_SSH_KEY=/tmp/key lium ssh my-pod
-LIUM_DEBUG=1 lium up           # debug output
+LIUM_API_KEY=xyz lium ls                    # override the API key
+LIUM_DEBUG=1 lium up --gpu H100 -y          # debug output
 LIUM_BASE_URL=https://staging.lium.io/api lium signup --email ada@example.com
-LIUM_SIGNUP_PASSWORD=pw lium signup --email ada@example.com   # signup password kept off argv
+LIUM_SIGNUP_PASSWORD=pw lium signup --email ada@example.com  # keeps the password off argv
+LIUM_PROVIDER_COLDKEY=... LIUM_PROVIDER_HOTKEY=... lium provider status
 ```
 
 `LIUM_BASE_URL` (default `https://lium.io/api`, the `/api` suffix included) points the SDK
 **and** `lium signup` at another backend — use it to sign up against staging.
+`LIUM_PAY_URL` overrides the payments backend the same way.
+
+There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
+(`lium config set ssh.key_path ...`).
 
 ## Exit Codes
 
@@ -426,8 +651,24 @@ LIUM_SIGNUP_PASSWORD=pw lium signup --email ada@example.com   # signup password 
 |------|---------|
 | 0 | Success |
 | 1 | General error |
-| 2 | Configuration error |
-| 3 | API error |
+| 2 | Configuration error (bad arguments, unreadable script, missing config) |
 | 4 | SSH error |
 | 5 | Pod not found |
-| 6 | Permission denied |
+
+⚠️ **The exit code alone is not proof of success.** Only three commands are
+reliable:
+
+- `lium exec` — exits with the remote command's code, `5` when no pod matched,
+  `2` on a bad argument or unreadable script;
+- `lium rm` — `5` when nothing matched `TARGETS`;
+- `lium up` — `1` when node selection, renting or readiness fails, `2` on a bad
+  argument, `4` when SSH is unavailable.
+
+**Everything else can print `Error: ...` and still exit 0** — including
+`lium ls`, whose API and authentication failures are swallowed the same way as in
+`ssh`, `logs`, `reboot`, `scp`, `rsync`, `port-forward`, `update` and the `bk`
+sub-commands. So `lium ls >/dev/null && echo OK` prints `OK` with a revoked API
+key. Read the output, or use `--format json` / `--json` where it exists, instead
+of branching on `$?` alone. Tracked as **DAH-2593**.
+
+Codes 3 and 6 exist in the source but no command produces them today.
