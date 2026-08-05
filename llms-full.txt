@@ -136,14 +136,9 @@ export PATH="$HOME/.lium/bin:$PATH"  # needed in current shell session
 
 After completing the two-step auth, run `lium ls` to verify. If it returns results, auth is done.
 
-#### `lium ps` Has No `--format json`
+#### Target Pods by Name, Not by Row Number
 
-```bash
-lium ps --format json  # Error: No such option
-lium ps                # correct
-```
-
-Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting — not a numeric index.
+Use the pod **name** or huid (e.g. `lunar-lion-4c`) from `lium ps` output — not a numeric index. Indices shift as pods come and go, so the number an agent read a minute ago may point at a different pod now.
 
 #### Commands Without -y Flag
 
@@ -278,7 +273,7 @@ lium templates pytorch         # search templates
 
 ```bash
 lium up --gpu H100 -y          # create pod
-lium ps                        # list active pods (no --format json support)
+lium ps                        # list active pods
 lium ssh my-pod                # SSH into pod
 lium exec my-pod "nvidia-smi"  # run command
 lium exec all "pip install torch"  # batch exec on all pods
@@ -317,9 +312,10 @@ Always use `--format json` when parsing output programmatically:
 
 ```bash
 lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
+lium ps --format json | jq '.[] | {huid, status, ports}'
 ```
 
-Note: `lium ps` does NOT support `--format json`.
+`lium ls` and `lium ps` take `--format json`; `lium balance` takes `--json`. `lium templates` has neither — parse its text output or use the SDK.
 
 ## End-to-End Agent Workflow
 
@@ -347,8 +343,8 @@ lium ls --gpu H100 --sort download
 # 5. Create pod (non-interactive!)
 lium up --gpu H100 --name work-pod --ttl 6h -y
 
-# 6. Wait and verify (note: --format json is NOT supported for lium ps)
-lium ps
+# 6. Wait and verify
+lium ps --format json
 
 # 7. Use the pod
 lium scp work-pod ./code.py
