@@ -13,6 +13,7 @@ Install the agent skill without node (Claude Code / Cursor / Codex):
 
 Primary resources:
 - Full reference (self-contained):   https://lium.io/llms-full.txt
+- Agent guide (docs site):           https://docs.lium.io/developers/agents.md
 - Skill file (with frontmatter):     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/SKILL.md
 - CLI reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md
 - SDK reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md
