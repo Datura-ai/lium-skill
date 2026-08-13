@@ -535,19 +535,38 @@ if ! command -v lium >/dev/null 2>&1; then
   curl -fsSL https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh | bash
   export PATH="$HOME/.lium/bin:$PATH"
 fi
+```
 
-# 2a. No account, Bittensor wallet on disk → key signup, no human step
+### 2. Authenticate — run exactly ONE of 2a, 2b, 2c
+
+These are three ways to end up with the same thing (a stored API key), not three steps.
+Running a second one after the first succeeded either fails on the existing key or drags a
+human back into a flow that no longer needs one.
+
+**2a. No account, Bittensor wallet on disk → key signup, no human step:**
+
+```bash
 lium signup-key --coldkey <WALLET> --hotkey <HOTKEY>
+```
 
-# 2b. No account, human with an email → sign up (ask for their real email first)
+**2b. No account, human with an email → sign up (ask for their real email first):**
+
+```bash
 lium signup --email <USER_EMAIL>
+```
 
-# 2c. Existing account → two-step headless auth instead
+**2c. Existing account → two-step headless auth:**
+
+```bash
 lium init --no-browser
 # → parse URL and session ID from output, show URL to user
 # → wait for user to confirm they approved
 lium init --session <SESSION_ID>
+```
 
+### Then, whichever branch you took
+
+```bash
 # 3. Verify (lium ls exits 0 even on an auth failure — check balance instead)
 lium balance --json
 
