@@ -68,8 +68,8 @@ lium ssh <pod>                        # connect
 ```
 
 Only create an account when the user asks for one. Ask for their **real email** first — the
-confirmation link needed for renting is sent there, and the account, its balance and password
-recovery are tied to it. Never invent an address, never use a disposable inbox.
+account, its balance and password recovery are tied to it, and the confirmation link is sent
+there. Never invent an address, never use a disposable inbox.
 
 `lium signup` prints the generated password — hand it to the user, it is their dashboard login
 (to choose one instead, pass `--password` or set `LIUM_SIGNUP_PASSWORD`, which keeps it off argv).
