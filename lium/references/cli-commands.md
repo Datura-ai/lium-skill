@@ -1,13 +1,16 @@
 # Lium CLI Command Reference
 
-Written against `lium --version` **0.0.29**. Every flag below appears in that
-binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
-`lium <command> --help` is the authority, not this file.
+Written against `lium --version` **0.0.29**; `lium signup-key` and `lium attach-email`
+ship in a newer CLI. Every flag below appears in its command's own `--help`; nothing
+here is extrapolated. When a newer CLI ships, `lium <command> --help` is the authority,
+not this file.
 
 ## Table of Contents
 
 - [Global Options](#global-options)
 - [lium signup](#lium-signup)
+- [lium signup-key](#lium-signup-key)
+- [lium attach-email](#lium-attach-email)
 - [lium init](#lium-init)
 - [lium balance](#lium-balance)
 - [lium ls](#lium-ls)
@@ -55,8 +58,10 @@ the `LIUM_DEBUG=1` environment variable, and the config file location comes from
 ## lium signup
 
 Create a Lium account and store the API key it mints. Fully non-interactive — this is
-the command to use when the user has **no account yet**. Older CLI binaries do not have it —
-probe with `lium signup --help` and update the CLI when it is missing.
+the command to use when the user has **no account yet** and a real email to tie it to; when a
+Bittensor wallet is already on disk, [`lium signup-key`](#lium-signup-key) needs no email and no
+human at all. Older CLI binaries do not have it — probe with `lium signup --help` and update the
+CLI when it is missing.
 
 ```bash
 lium signup [OPTIONS]
@@ -70,8 +75,8 @@ The password can also come from the `LIUM_SIGNUP_PASSWORD` environment variable 
 wins when both are set. Prefer the variable: a flag value is left behind in the shell history
 and in `ps` output. Whatever its origin, the password is always reported back to the caller.
 
-Ask the user for their **real** email — the account, its balance, password recovery and the
-confirmation link are all tied to it. Never invent an address.
+Ask the user for their **real** email — the account, its balance, password recovery and every
+mail the platform sends are all tied to it. Never invent an address.
 
 The command creates the account (`POST /users`), stores the minted API key in
 `~/.lium/config.ini` under `api.api_key`, and sets up an SSH key. After it, `lium ls` and
@@ -117,6 +122,124 @@ LIUM_SIGNUP_PASSWORD=... lium signup --email ada@example.com
 - Renting is not gated on email confirmation — a funded balance is the only requirement. Clicking
   the link in the **"Please confirm your email"** mail (the separate "Welcome to Celium!" mail
   carries no link) confirms the address, so that password resets and account emails reach the user.
+
+## lium signup-key
+
+Create a Lium account owned by a **Bittensor hotkey** — no email, no password, no human step. Use
+it when the machine already has a wallet on disk; use [`lium signup`](#lium-signup) when there is a
+human with an email. Older CLI binaries do not have it — probe with `lium signup-key --help` and
+update the CLI when it is missing.
+
+```bash
+lium signup-key [OPTIONS]
+  --coldkey TEXT   Bittensor coldkey (wallet) name holding the hotkey (REQUIRED)
+  --hotkey TEXT    Bittensor hotkey name — its address owns the account (REQUIRED)
+  --name NAME      Display name (defaults to the address)
+  --json           Machine-readable output
+```
+
+`--coldkey` and `--hotkey` are wallet **names** under `~/.bittensor/wallets`, not SS58 addresses.
+The wallet must already exist — the command never generates a key, and only a Bittensor sr25519
+hotkey can sign. Under the hood the backend mints a single-use challenge
+(`POST /auth/wallet-challenge`), the hotkey signs it, and the signature is traded for the account
+(`POST /auth/wallet-signup`).
+
+Like `lium signup`, it stores the minted API key in `~/.lium/config.ini` under `api.api_key`, sets
+up an SSH key, and gets the same $5 signup credit under the same once-per-IP rule. After it,
+`lium ls` and `lium up` work with no further setup: a key-only account rents as soon as its balance
+is positive, with no email anywhere in the picture.
+
+**Refuses to run when `api.api_key` is already configured** — like `lium signup`, it exits with an
+error instead of creating a second, unreachable account:
+
+```bash
+lium config unset api.api_key   # then: lium signup-key --coldkey ... --hotkey ...
+```
+
+Failures the caller actually hits:
+
+- `[WALLET_NOT_FOUND] could not open wallet name='...' hotkey='...'` — no such wallet or hotkey
+  under `~/.bittensor/wallets`. The command will not create one.
+- `[CONFIG_MISSING] loading a wallet needs the chain stack` — bittensor is not installed for this
+  interpreter: `pip install "lium.io[provider]"`, or use the standalone binary from
+  https://lium.io/install.sh, which ships it prebuilt.
+- `address: Wallet address already registered.` — that hotkey already owns an account; use that
+  account's existing API key instead of signing up again.
+
+Examples:
+```bash
+lium signup-key --coldkey default --hotkey agent
+lium signup-key --coldkey default --hotkey agent --name agent-01 --json
+```
+
+`--json` output:
+```json
+{
+  "address": "5F...",
+  "api_key": "sk_...",
+  "is_new_user": true,
+  "next_steps": ["...", "...", "..."],
+  "signup_credit_granted": true,
+  "ssh_key_configured": true
+}
+```
+
+- `address` — the hotkey's SS58 address, the account's owner.
+- `signup_credit_granted` — same meaning as in `lium signup`.
+- The account has **no email at all** until [`lium attach-email`](#lium-attach-email) runs, so
+  nothing can reach its owner: no receipts, no low-balance warnings, no password recovery.
+
+## lium attach-email
+
+Add an email + password login to the account the **configured API key** belongs to (`api.api_key`
+in `~/.lium/config.ini`, or `LIUM_API_KEY`). Meant for an account created with
+[`lium signup-key`](#lium-signup-key), which has no email at all. Older CLI binaries do not have
+it — probe with `lium attach-email --help`.
+
+```bash
+lium attach-email [OPTIONS]
+  --email EMAIL       The user's real email (REQUIRED) — the confirmation link goes there
+  --password PASSWORD Account password (a strong one is generated when omitted)
+  --json              Machine-readable output
+```
+
+Same password rules as `lium signup`: `LIUM_SIGNUP_PASSWORD` is the fallback, `--password` wins when
+both are set, prefer the variable (a flag value is left behind in the shell history and in `ps`
+output), and the password is always reported back to the caller.
+
+The command posts to `POST /users/me/email-password` with the stored key; the backend mails a
+verification link and the address stays **unverified** until the user clicks it. Nothing else
+changes — same account, same API key, same balance. Run it to make the account reachable — receipts,
+low-balance warnings, password recovery — not to unlock renting, which needs only a positive
+balance.
+
+Failures the caller actually hits:
+
+- `email: Account already has an email address.` — the account is not key-only. Changing an existing
+  address is a dashboard operation (`PUT /users/me`, JWT only), not this command.
+- `email: Email is already in use.` — another account owns that address.
+- `No API key is configured.` — run `lium signup-key --coldkey <name> --hotkey <name>` first, or
+  `lium init` to authenticate an existing account.
+
+**Failures never strand the credential.** When the request dies in transport — a timeout — the email
+may already be attached, so the error still reports the email and password. With `--json`, that
+error goes to stderr as
+`{"ok": false, "error": {...}, "data": {"email": "...", "password": "..."}}`.
+
+Examples:
+```bash
+lium attach-email --email ada@example.com
+LIUM_SIGNUP_PASSWORD=... lium attach-email --email ada@example.com --json
+```
+
+`--json` output:
+```json
+{
+  "email": "ada@example.com",
+  "next_steps": ["...", "..."],
+  "password": "generated-or-supplied"
+}
+```
 
 ## lium init
 
@@ -636,11 +759,13 @@ LIUM_API_KEY=xyz lium ls                    # override the API key
 LIUM_DEBUG=1 lium up --gpu H100 -y          # debug output
 LIUM_BASE_URL=https://staging.lium.io/api lium signup --email ada@example.com
 LIUM_SIGNUP_PASSWORD=pw lium signup --email ada@example.com  # keeps the password off argv
+LIUM_SIGNUP_PASSWORD=pw lium attach-email --email ada@example.com  # same variable, same reason
 LIUM_PROVIDER_COLDKEY=... LIUM_PROVIDER_HOTKEY=... lium provider status
 ```
 
 `LIUM_BASE_URL` (default `https://lium.io/api`, the `/api` suffix included) points the SDK
-**and** `lium signup` at another backend — use it to sign up against staging.
+**and** the account commands (`signup`, `signup-key`, `attach-email`) at another backend — use it
+to sign up against staging.
 `LIUM_PAY_URL` overrides the payments backend the same way.
 
 There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config

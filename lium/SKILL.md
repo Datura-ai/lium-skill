@@ -1,6 +1,6 @@
 ---
 name: lium
-description: GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
+description: GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "sign up with a Bittensor wallet", "wallet signup", "attach an email to my lium account", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund/signup/signup-key/attach-email), lium SDK, @machine decorator.
 allowed-tools: Bash(lium:*)
 ---
 
@@ -25,13 +25,15 @@ This auto-detects OS (Linux/macOS) and architecture, downloads the binary to `~/
 
 After install, authentication depends on whether the user has a Lium account:
 
-- **No account** → `lium signup --email <their email>` — see "No Account Yet — Sign Up". Do not send the user to the web signup form.
+- **No account, a Bittensor wallet on disk** → `lium signup-key --coldkey <wallet> --hotkey <hotkey>` — no email, no human step at all.
+- **No account, a human with an email** → `lium signup --email <their email>` — see "No Account Yet — Sign Up". Do not send the user to the web signup form.
 - **Has an account** → `lium init` (opens a browser) or `lium init --no-browser` for headless/agent use — see "Authentication Setup for Agents".
 
 ```bash
-lium signup --email ada@example.com   # no account yet
-lium init                             # existing account, browser
-lium init --no-browser                # existing account, headless
+lium signup-key --coldkey default --hotkey agent   # no account, wallet on disk
+lium signup --email ada@example.com                # no account, human with an email
+lium init                                          # existing account, browser
+lium init --no-browser                             # existing account, headless
 ```
 
 Verify setup:
@@ -57,8 +59,15 @@ pip install lium.io
 
 ### No Account Yet — Sign Up
 
-`lium init` authenticates a user who **already has an account**. To create one, use
-`lium signup` — no browser, no dashboard, no web form. The whole cold start is four commands:
+`lium init` authenticates a user who **already has an account**. To create one, use `lium signup`
+or `lium signup-key` — no browser, no dashboard, no web form. Pick by what you already have:
+
+| You have | Command | Human step |
+|---|---|---|
+| A Bittensor wallet under `~/.bittensor/wallets` | `lium signup-key --coldkey <wallet> --hotkey <hotkey>` | none |
+| A human with a real email | `lium signup --email <their email>` | they read their mail |
+
+The whole cold start is four commands:
 
 ```bash
 lium signup --email ada@example.com   # creates the account, stores the API key
@@ -67,9 +76,9 @@ lium up <node-id> -y                  # rent
 lium ssh <pod>                        # connect
 ```
 
-Only create an account when the user asks for one. Ask for their **real email** first — the
-account, its balance and password recovery are tied to it, and the confirmation link is sent
-there. Never invent an address, never use a disposable inbox.
+Only create an account when the user asks for one. On the email path, ask for their **real email**
+first — the account, its balance, password recovery and every mail the platform sends are tied to
+it, and the confirmation link is sent there. Never invent an address, never use a disposable inbox.
 
 `lium signup` prints the generated password — hand it to the user, it is their dashboard login
 (to choose one instead, pass `--password` or set `LIUM_SIGNUP_PASSWORD`, which keeps it off argv).
@@ -80,11 +89,12 @@ Add `--json` for a machine-readable
 The key is written to `~/.lium/config.ini`, so the account is then indistinguishable from one
 set up with `lium init`.
 
-Older binaries do not have the command. Probe for it, and update when it is missing:
+Older binaries do not have these commands. Probe for them, and update when missing:
 
 ```bash
 lium --version                        # diagnostics only — probe the command itself below
 lium signup --help >/dev/null 2>&1 || echo "CLI too old — update it"
+lium signup-key --help >/dev/null 2>&1 || echo "CLI too old for key signup — update it"
 
 # Binary install (installed via install.sh): auto-updates on launch, or force it
 curl -fsSL https://lium.io/install.sh | bash
@@ -115,10 +125,43 @@ lium config set api.api_key "$KEY"
 # and setting the path to a key that does not exist yet makes it skip that
 ```
 
+#### Key-Only Signup — `lium signup-key`
+
+When a Bittensor wallet already exists on the machine, this is the whole account creation — no
+email, no password, nobody to ask:
+
+```bash
+lium signup-key --coldkey default --hotkey agent          # account owned by the hotkey
+lium signup-key --coldkey default --hotkey agent --json   # {address, api_key, is_new_user, ...}
+```
+
+`--coldkey` and `--hotkey` are wallet **names** under `~/.bittensor/wallets`, not SS58 addresses.
+The wallet must already exist — the command never generates a key, and only a Bittensor sr25519
+hotkey can sign the challenge the backend mints. It stores the minted API key in
+`~/.lium/config.ini`, sets up the SSH key like the email flow, and gets the same $5 signup credit
+under the same once-per-IP rule. After it, `lium ls` and `lium up` work: a key-only account rents
+as soon as its balance is positive, with no email involved.
+
+What such an account lacks is a way to reach its owner — no receipts, no low-balance warnings, no
+password recovery. That, not renting, is why an email is worth attaching later:
+
+```bash
+lium attach-email --email ada@example.com          # generates the password, prints it
+LIUM_SIGNUP_PASSWORD=... lium attach-email --email ada@example.com --json
+```
+
+`lium attach-email` adds an email + password login to the account the stored API key belongs to and
+mails a verification link; the address stays unverified until the user clicks it, and nothing else
+changes (same account, same API key, same balance). It only works on an account that has no email
+yet — one that already has an address answers `email: Account already has an email address.`
+
+Full flags and failures for both: [references/cli-commands.md](references/cli-commands.md).
+
 ### Before the First Rental — Balance
 
 `lium up` calls `POST /executors/{executor_id}/rent`, and the balance is the only gate: a fresh
-account can rent as soon as it is funded, email confirmed or not. Map the error to the action:
+account can rent as soon as it is funded, email confirmed or not — a key-only account with no
+email at all rents the same way. Map the error to the action:
 
 | 403 on rent | Meaning | Action |
 |---|---|---|
@@ -477,7 +520,8 @@ lium ps --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 
 `--format [table|json]` exists on `lium ls` and `lium ps`. `--json` — a plain flag,
 not a format choice — is taken by `lium exec`, `lium fund`, `lium balance`,
-`lium signup`, `lium topup create`, `lium topup currencies`, and by the whole
+`lium signup`, `lium signup-key`, `lium attach-email`, `lium topup create`,
+`lium topup currencies`, and by the whole
 `lium provider` group (set it on the group: `lium provider --json node list`).
 `lium templates` has neither, and neither does anything else.
 
@@ -492,10 +536,13 @@ if ! command -v lium >/dev/null 2>&1; then
   export PATH="$HOME/.lium/bin:$PATH"
 fi
 
-# 2a. No account yet → sign up (asks the user for their real email first)
+# 2a. No account, Bittensor wallet on disk → key signup, no human step
+lium signup-key --coldkey <WALLET> --hotkey <HOTKEY>
+
+# 2b. No account, human with an email → sign up (ask for their real email first)
 lium signup --email <USER_EMAIL>
 
-# 2b. Existing account → two-step headless auth instead
+# 2c. Existing account → two-step headless auth instead
 lium init --no-browser
 # → parse URL and session ID from output, show URL to user
 # → wait for user to confirm they approved
