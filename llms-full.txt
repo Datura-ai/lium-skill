@@ -117,21 +117,21 @@ lium config set api.api_key "$KEY"
 # and setting the path to a key that does not exist yet makes it skip that
 ```
 
-### Before the First Rental — Verification and Balance
+### Before the First Rental — Balance
 
-`lium up` calls `POST /executors/{executor_id}/rent`, which fails with `403` until both gates
-are cleared. Map the error to the action:
+`lium up` calls `POST /executors/{executor_id}/rent`, and the balance is the only gate: a fresh
+account can rent as soon as it is funded, email confirmed or not. Map the error to the action:
 
 | 403 on rent | Meaning | Action |
 |---|---|---|
-| `"User is not verified"` | The confirmation link has not been clicked yet. | Ask the user to click it, then retry — see "Email confirmation" below. Do not abandon the task. |
 | `"Insufficient balance"` | The account balance is zero. | Fund the account — see "Funding options" below. |
 
 #### Email confirmation
 
-Registration sends **two** mails: `"Welcome to Celium!"` (no link in it) and
-`"Please confirm your email"` — only the second one carries the link. Point the user at that
-subject, and ask them to click the link. That is the normal path.
+Confirming the address does not gate renting. It confirms the address itself, so that password
+resets and account emails reach the user. Registration sends **two** mails: `"Welcome to Celium!"`
+(no link in it) and `"Please confirm your email"` — only the second one carries the link. Point
+the user at that subject, and ask them to click the link. That is the normal path.
 
 Two endpoints on `https://lium.io/api` cover the cases where it does not work. Neither needs
 auth; both take JSON:
@@ -644,8 +644,9 @@ LIUM_SIGNUP_PASSWORD=... lium signup --email ada@example.com
   answer to "did the $5 signup credit land?": `true` → granted; `false` → not granted (the
   once-per-IP gate, or the credit disabled platform-side); `null` → the backend did not report
   it (older backend) — read the balance instead: `lium balance --json`.
-- Renting stays blocked until the user clicks the link in the **"Please confirm your email"** mail
-  (the separate "Welcome to Celium!" mail carries no link).
+- Renting is not gated on email confirmation — a funded balance is the only requirement. Clicking
+  the link in the **"Please confirm your email"** mail (the separate "Welcome to Celium!" mail
+  carries no link) confirms the address, so that password resets and account emails reach the user.
 
 ## lium init
 

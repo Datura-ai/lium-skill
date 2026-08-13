@@ -114,8 +114,9 @@ LIUM_SIGNUP_PASSWORD=... lium signup --email ada@example.com
   answer to "did the $5 signup credit land?": `true` → granted; `false` → not granted (the
   once-per-IP gate, or the credit disabled platform-side); `null` → the backend did not report
   it (older backend) — read the balance instead: `lium balance --json`.
-- Renting stays blocked until the user clicks the link in the **"Please confirm your email"** mail
-  (the separate "Welcome to Celium!" mail carries no link).
+- Renting is not gated on email confirmation — a funded balance is the only requirement. Clicking
+  the link in the **"Please confirm your email"** mail (the separate "Welcome to Celium!" mail
+  carries no link) confirms the address, so that password resets and account emails reach the user.
 
 ## lium init
 
