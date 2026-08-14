@@ -71,7 +71,7 @@ wins when both are set. Prefer the variable: a flag value is left behind in the 
 and in `ps` output. Whatever its origin, the password is always reported back to the caller.
 
 Ask the user for their **real** email — the account, its balance, password recovery and the
-confirmation link needed for renting are all tied to it. Never invent an address.
+confirmation link are all tied to it. Never invent an address.
 
 The command creates the account (`POST /users`), stores the minted API key in
 `~/.lium/config.ini` under `api.api_key`, and sets up an SSH key. After it, `lium ls` and
@@ -114,8 +114,9 @@ LIUM_SIGNUP_PASSWORD=... lium signup --email ada@example.com
   answer to "did the $5 signup credit land?": `true` → granted; `false` → not granted (the
   once-per-IP gate, or the credit disabled platform-side); `null` → the backend did not report
   it (older backend) — read the balance instead: `lium balance --json`.
-- Renting stays blocked until the user clicks the link in the **"Please confirm your email"** mail
-  (the separate "Welcome to Celium!" mail carries no link).
+- Renting is not gated on email confirmation — a funded balance is the only requirement. Clicking
+  the link in the **"Please confirm your email"** mail (the separate "Welcome to Celium!" mail
+  carries no link) confirms the address, so that password resets and account emails reach the user.
 
 ## lium init
 

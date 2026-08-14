@@ -68,8 +68,8 @@ lium ssh <pod>                        # connect
 ```
 
 Only create an account when the user asks for one. Ask for their **real email** first — the
-confirmation link needed for renting is sent there, and the account, its balance and password
-recovery are tied to it. Never invent an address, never use a disposable inbox.
+account, its balance and password recovery are tied to it, and the confirmation link is sent
+there. Never invent an address, never use a disposable inbox.
 
 `lium signup` prints the generated password — hand it to the user, it is their dashboard login
 (to choose one instead, pass `--password` or set `LIUM_SIGNUP_PASSWORD`, which keeps it off argv).
@@ -115,21 +115,21 @@ lium config set api.api_key "$KEY"
 # and setting the path to a key that does not exist yet makes it skip that
 ```
 
-### Before the First Rental — Verification and Balance
+### Before the First Rental — Balance
 
-`lium up` calls `POST /executors/{executor_id}/rent`, which fails with `403` until both gates
-are cleared. Map the error to the action:
+`lium up` calls `POST /executors/{executor_id}/rent`, and the balance is the only gate: a fresh
+account can rent as soon as it is funded, email confirmed or not. Map the error to the action:
 
 | 403 on rent | Meaning | Action |
 |---|---|---|
-| `"User is not verified"` | The confirmation link has not been clicked yet. | Ask the user to click it, then retry — see "Email confirmation" below. Do not abandon the task. |
 | `"Insufficient balance"` | The account balance is zero. | Fund the account — see "Funding options" below. |
 
 #### Email confirmation
 
-Registration sends **two** mails: `"Welcome to Celium!"` (no link in it) and
-`"Please confirm your email"` — only the second one carries the link. Point the user at that
-subject, and ask them to click the link. That is the normal path.
+Confirming the address does not gate renting. It confirms the address itself, so that password
+resets and account emails reach the user. Registration sends **two** mails: `"Welcome to Celium!"`
+(no link in it) and `"Please confirm your email"` — only the second one carries the link. Point
+the user at that subject, and ask them to click the link. That is the normal path.
 
 Two endpoints on `https://lium.io/api` cover the cases where it does not work. Neither needs
 auth; both take JSON:
