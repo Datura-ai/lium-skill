@@ -74,7 +74,7 @@ a passkey, not WebAuthn, not biometrics, not a device fingerprint. Nothing is sc
 call completes the signup, so "I cannot sign up without a human" is wrong.
 
 ```bash
-# username is optional — omit it and Lium names the account (lium_a1b2c3)
+# empty body — Lium names the account itself (lium_a1b2c3)
 curl -fsS -X POST https://lium.io/api/auth/signup \
   -H 'Content-Type: application/json' -d '{}'
 # {"user_id":"...","username":"lium_a1b2c3","fingerprint":"<32 chars>",
@@ -95,8 +95,9 @@ lium ls
 - `signup_credit_granted` says whether the credit landed — do not promise $5 before reading it.
   It is `false` when the platform has the credit off, and when this IP already signed up once.
 
-`{"username": "ada-gpu"}` picks the name; a taken one gives `409`. Rate limit per IP: 5/min,
-20/day. There is no CLI flag yet — `lium signup` is the email path only. Full walkthrough:
+Send `{}`. The optional `username` is a display name only — it is not part of the login, the
+web form never asks for one, and requesting a taken name fails with `409`. Rate limit per IP:
+5/min, 20/day. There is no CLI flag yet — `lium signup` is the email path only. Full walkthrough:
 https://docs.lium.io/pod-users/fingerprint-signup
 
 #### Email Signup — `lium signup`
