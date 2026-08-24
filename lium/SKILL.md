@@ -1,6 +1,6 @@
 ---
 name: lium
-description: GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
+description: GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "sign up without an email", "fingerprint", "fingerprint signup", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
 allowed-tools: Bash(lium:*)
 ---
 
@@ -25,13 +25,16 @@ This auto-detects OS (Linux/macOS) and architecture, downloads the binary to `~/
 
 After install, authentication depends on whether the user has a Lium account:
 
-- **No account** → `lium signup --email <their email>` — see "No Account Yet — Sign Up". Do not send the user to the web signup form.
+- **No account, and no mailbox you can read** → **fingerprint signup**: one call to `POST /auth/signup`, no email, no password, no confirmation link. This is the fully autonomous path — see "No Account Yet — Sign Up".
+- **No account, but a human is there to click a confirmation link** → `lium signup --email <their email>` — same section. Do not send the user to the web signup form.
 - **Has an account** → `lium init` (opens a browser) or `lium init --no-browser` for headless/agent use — see "Authentication Setup for Agents".
 
 ```bash
-lium signup --email ada@example.com   # no account yet
-lium init                             # existing account, browser
-lium init --no-browser                # existing account, headless
+curl -sX POST https://lium.io/api/auth/signup \
+  -H 'Content-Type: application/json' -d '{}'   # no account, no mailbox — returns api_key
+lium signup --email ada@example.com             # no account, human can confirm the email
+lium init                                       # existing account, browser
+lium init --no-browser                          # existing account, headless
 ```
 
 Verify setup:
@@ -57,8 +60,58 @@ pip install lium.io
 
 ### No Account Yet — Sign Up
 
-`lium init` authenticates a user who **already has an account**. To create one, use
-`lium signup` — no browser, no dashboard, no web form. The whole cold start is four commands:
+`lium init` authenticates a user who **already has an account**. There are two ways to create
+one, and the choice is made by a single question — **can anyone read the mailbox?**
+
+| Situation | Path |
+|---|---|
+| No mailbox you can read: headless agent, script, CI, the user is not at the keyboard | **Fingerprint signup** — `POST /auth/signup`, one call, fully autonomous |
+| A human is present and can click the confirmation link in their own inbox | `lium signup --email <their real email>` |
+
+Only create an account when the user asks for one. Never invent an email address and never use a
+disposable inbox to fake the email path — when there is no mailbox, sign up with a fingerprint.
+
+#### Fingerprint Signup — No Email, Fully Autonomous
+
+A **fingerprint** here is a 32-character random string that Lium mints as the account credential.
+It is **not** a passkey, **not** WebAuthn, **not** biometrics and **not** a device fingerprint —
+nothing is scanned and no browser API is involved. An agent can complete this signup end to end
+with one HTTP call, so "I cannot sign up without a human" is wrong.
+
+```bash
+# username is optional — omit it and Lium names the account (lium_a1b2c3)
+curl -sX POST https://lium.io/api/auth/signup \
+  -H 'Content-Type: application/json' -d '{}'
+# {"user_id":"...","username":"lium_a1b2c3","fingerprint":"<32 chars>",
+#  "api_key":"sk_...","signup_credit_granted":true}
+
+# store the key and rent — no confirmation step in between
+lium config set api.api_key sk_...
+lium ls
+```
+
+- `api_key` is usable immediately, as the `X-API-Key` header or as `api.api_key` in the CLI
+  config. There is no second call and nothing to verify.
+- `fingerprint` is the **dashboard login** at https://lium.io/login and the **only** recovery
+  path — Lium stores just a hash of it. It is returned **exactly once**; nobody, support
+  included, can look it up or reset it. Losing it loses the account and its balance.
+- Give the fingerprint to the user and tell them to save it in a password manager. Treat it like
+  a password: **never** paste it into a pod, an environment variable on a rented machine, a log,
+  a commit or a support ticket. The API key — not the fingerprint — is what workloads use.
+- `{"username": "ada-gpu"}` picks the name (3-32 chars, letters/digits/`_`/`-`); a taken name
+  gives `409`. Per IP address: 5 signups per minute, 20 per day, and the $5 signup credit is
+  granted once — a second account from the same IP is created without it.
+
+Full walkthrough, including the web flow and what an email-less account gives up:
+https://docs.lium.io/pod-users/fingerprint-signup
+
+There is no CLI flag for this yet — `lium signup` is the email path only, so the fingerprint
+signup is the `curl` above.
+
+#### Email Signup — `lium signup`
+
+When a human can confirm the address, `lium signup` does the whole cold start — no browser, no
+dashboard, no web form:
 
 ```bash
 lium signup --email ada@example.com   # creates the account, stores the API key
@@ -67,9 +120,8 @@ lium up <node-id> -y                  # rent
 lium ssh <pod>                        # connect
 ```
 
-Only create an account when the user asks for one. Ask for their **real email** first — the
-account, its balance and password recovery are tied to it, and the confirmation link is sent
-there. Never invent an address, never use a disposable inbox.
+Ask for their **real email** first — the account, its balance and password recovery are tied to
+it, and the confirmation link is sent there.
 
 `lium signup` prints the generated password — hand it to the user, it is their dashboard login
 (to choose one instead, pass `--password` or set `LIUM_SIGNUP_PASSWORD`, which keeps it off argv).
@@ -97,6 +149,9 @@ On an older CLI that cannot be updated, the same signup is three HTTP calls:
 
 ```bash
 BASE=https://lium.io/api
+
+# 0. No mailbox to confirm? One call instead of three — see "Fingerprint Signup" above.
+curl -sX POST $BASE/auth/signup -H 'Content-Type: application/json' -d '{}'
 
 # 1. Create the account. An API key named "Default" is minted server-side here; current
 #    backends return it in the response — {"msg": "success", "api_key": "sk_...",
@@ -492,10 +547,15 @@ if ! command -v lium >/dev/null 2>&1; then
   export PATH="$HOME/.lium/bin:$PATH"
 fi
 
-# 2a. No account yet → sign up (asks the user for their real email first)
+# 2a. No account and no mailbox you can read → fingerprint signup, no human needed.
+#     Save `fingerprint` for the user (dashboard login, shown once); use `api_key` here.
+curl -sX POST https://lium.io/api/auth/signup -H 'Content-Type: application/json' -d '{}'
+lium config set api.api_key <API_KEY_FROM_RESPONSE>
+
+# 2b. No account, but a human can click the confirmation link → ask for their real email
 lium signup --email <USER_EMAIL>
 
-# 2b. Existing account → two-step headless auth instead
+# 2c. Existing account → two-step headless auth instead
 lium init --no-browser
 # → parse URL and session ID from output, show URL to user
 # → wait for user to confirm they approved
