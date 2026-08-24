@@ -12,8 +12,9 @@ Install the agent skill without node (Claude Code / Cursor / Codex):
   curl -fsSL https://lium.io/agents/install.sh | bash
 
 Sign up without an email (headless — the fingerprint is a 32-char string, not a passkey):
-  curl -X POST https://lium.io/api/auth/signup
-  Returns api_key (use as X-API-Key) and fingerprint (dashboard login, shown once, no recovery).
+  curl -f -X POST https://lium.io/api/auth/signup
+  Returns fingerprint (dashboard login, shown once, no recovery) and api_key when minting succeeds.
+  api_key can be null; signup credit also depends on the platform setting and prior use of the IP.
 
 Primary resources:
 - Full reference (self-contained):   https://lium.io/llms-full.txt

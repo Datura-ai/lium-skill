@@ -1,7 +1,7 @@
 ---
 name: lium
 description: GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "sign up without an email", "fingerprint", "fingerprint signup", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
-allowed-tools: Bash(lium:*)
+allowed-tools: Bash(lium:*) Bash(curl:*)
 ---
 
 # Lium CLI & SDK
@@ -29,12 +29,24 @@ After install, authentication depends on whether the user has a Lium account:
 - **No account, but a human is there to click a confirmation link** → `lium signup --email <their email>` — same section. Do not send the user to the web signup form.
 - **Has an account** → `lium init` (opens a browser) or `lium init --no-browser` for headless/agent use — see "Authentication Setup for Agents".
 
+No account and no mailbox — fingerprint signup:
+
 ```bash
-curl -sX POST https://lium.io/api/auth/signup \
-  -H 'Content-Type: application/json' -d '{}'   # no account, no mailbox — returns api_key
-lium signup --email ada@example.com             # no account, human can confirm the email
-lium init                                       # existing account, browser
-lium init --no-browser                          # existing account, headless
+curl -fsS -X POST https://lium.io/api/auth/signup \
+  -H 'Content-Type: application/json' -d '{}'
+```
+
+No account and a human can confirm the email:
+
+```bash
+lium signup --email ada@example.com
+```
+
+Existing account:
+
+```bash
+lium init                 # browser
+lium init --no-browser    # headless
 ```
 
 Verify setup:
@@ -80,20 +92,20 @@ with one HTTP call, so "I cannot sign up without a human" is wrong.
 
 ```bash
 # username is optional — omit it and Lium names the account (lium_a1b2c3)
-curl -sX POST https://lium.io/api/auth/signup \
+curl -fsS -X POST https://lium.io/api/auth/signup \
   -H 'Content-Type: application/json' -d '{}'
 # {"user_id":"...","username":"lium_a1b2c3","fingerprint":"<32 chars>",
 #  "api_key":"sk_...","signup_credit_granted":true|false}
 
-# store the key and rent — no confirmation step in between
+# when api_key is a string, store it and continue — no confirmation step in between
 lium config set api.api_key sk_...
 lium ls
 ```
 
-- `api_key` is usable immediately, as the `X-API-Key` header or as `api.api_key` in the CLI
-  config. There is no second call and nothing to verify. It can come back `null` — minting the
-  key is allowed to fail without failing the signup — and the account still exists: log in with
-  the fingerprint and create a key on the dashboard.
+- When `api_key` is a string, it is usable immediately as the `X-API-Key` header or as
+  `api.api_key` in the CLI config. It can instead be `null`: minting the key is allowed to fail
+  without failing signup. In that case, stop before configuring the CLI; log in with the
+  fingerprint and create a key on the dashboard.
 - `fingerprint` is the **dashboard login** at https://lium.io/login and the **only** recovery
   path — Lium stores just a hash of it. It is returned **exactly once**; nobody, support
   included, can look it up or reset it. Losing it loses the account and its balance.
@@ -154,8 +166,8 @@ On an older CLI that cannot be updated, the same signup is three HTTP calls:
 ```bash
 BASE=https://lium.io/api
 
-# 0. No mailbox to confirm? One call instead of three — see "Fingerprint Signup" above.
-curl -sX POST $BASE/auth/signup -H 'Content-Type: application/json' -d '{}'
+# No mailbox to confirm? Use this instead of steps 1-3, then stop.
+curl -fsS -X POST $BASE/auth/signup -H 'Content-Type: application/json' -d '{}'
 
 # 1. Create the account. An API key named "Default" is minted server-side here; current
 #    backends return it in the response — {"msg": "success", "api_key": "sk_...",
@@ -206,10 +218,10 @@ curl -sX POST https://lium.io/api/auth/verify-email \
 
 #### The $5 signup credit
 
-New accounts get a $5 credit. It is granted when the platform has the credit enabled **and** no
-other account has signed up from this IP address — nothing about the email domain matters. Do not
-explain a `403 "Insufficient balance"` with the credit: that error only says the balance is zero,
-and the answer to it is to fund the account.
+The signup credit is $5 when the platform has it enabled **and** no other account has signed up
+from this IP address — nothing about the email domain matters. Do not explain a `403 "Insufficient
+balance"` with the credit: that error only says the balance is zero, and the answer to it is to
+fund the account.
 
 Whether it landed is answered by `signup_credit_granted` in the signup response (also in
 `lium signup --json`): `true` → granted, `false` → not granted. When it is `null` or absent —
@@ -550,23 +562,43 @@ if ! command -v lium >/dev/null 2>&1; then
   curl -fsSL https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh | bash
   export PATH="$HOME/.lium/bin:$PATH"
 fi
+```
 
+For step 2, run exactly one of these alternative authentication paths.
+
+No account and no mailbox you can read:
+
+```bash
 # 2a. No account and no mailbox you can read → fingerprint signup, no human needed.
 #     Save `fingerprint` for the user (dashboard login, shown once); use `api_key` here.
-curl -sX POST https://lium.io/api/auth/signup -H 'Content-Type: application/json' -d '{}'
+curl -fsS -X POST https://lium.io/api/auth/signup -H 'Content-Type: application/json' -d '{}'
+# If api_key is null, stop and create one after signing in with the fingerprint.
 lium config set api.api_key <API_KEY_FROM_RESPONSE>
+```
 
+No account, with a human available to confirm the email:
+
+```bash
 # 2b. No account, but a human can click the confirmation link → ask for their real email
 lium signup --email <USER_EMAIL>
+```
 
+Existing account:
+
+```bash
 # 2c. Existing account → two-step headless auth instead
 lium init --no-browser
 # → parse URL and session ID from output, show URL to user
 # → wait for user to confirm they approved
 lium init --session <SESSION_ID>
+```
 
+Then continue with the common flow:
+
+```bash
 # 3. Verify (lium ls exits 0 even on an auth failure — check balance instead)
 lium balance --json
+# A zero balance means signup credit did not land; fund the account before renting.
 
 # 4. Find suitable GPU (sort by speed by default)
 lium ls --gpu H100 --sort download
