@@ -85,7 +85,7 @@ with one HTTP call, so "I cannot sign up without a human" is wrong.
 curl -sX POST https://lium.io/api/auth/signup \
   -H 'Content-Type: application/json' -d '{}'
 # {"user_id":"...","username":"lium_a1b2c3","fingerprint":"<32 chars>",
-#  "api_key":"sk_...","signup_credit_granted":true}
+#  "api_key":"sk_...","signup_credit_granted":true|false}
 
 # store the key and rent — no confirmation step in between
 lium config set api.api_key sk_...
@@ -93,7 +93,9 @@ lium ls
 ```
 
 - `api_key` is usable immediately, as the `X-API-Key` header or as `api.api_key` in the CLI
-  config. There is no second call and nothing to verify.
+  config. There is no second call and nothing to verify. It can come back `null` — minting the
+  key is allowed to fail without failing the signup — and the account still exists: log in with
+  the fingerprint and create a key on the dashboard.
 - `fingerprint` is the **dashboard login** at https://lium.io/login and the **only** recovery
   path — Lium stores just a hash of it. It is returned **exactly once**; nobody, support
   included, can look it up or reset it. Losing it loses the account and its balance.
@@ -101,8 +103,10 @@ lium ls
   a password: **never** paste it into a pod, an environment variable on a rented machine, a log,
   a commit or a support ticket. The API key — not the fingerprint — is what workloads use.
 - `{"username": "ada-gpu"}` picks the name (3-32 chars, letters/digits/`_`/`-`); a taken name
-  gives `409`. Per IP address: 5 signups per minute, 20 per day, and the $5 signup credit is
-  granted once — a second account from the same IP is created without it.
+  gives `409`. Per IP address: 5 signups per minute, 20 per day.
+- `signup_credit_granted` in the response is what says whether a signup credit landed — do not
+  promise the user $5 before reading it. It is `false` when the platform has the credit switched
+  off, and when another account already signed up from this IP. The account is created either way.
 
 Full walkthrough, including the web flow and what an email-less account gives up:
 https://docs.lium.io/pod-users/fingerprint-signup
