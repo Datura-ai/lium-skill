@@ -50,9 +50,10 @@ if [ "$BILLED" != "$WANT" ] || [ "$SEEN" != "$WANT" ]; then
 fi
 ```
 
-If it fails, rent again on a **different** executor: pick a HUID from
-`lium ls --gpu <type> --count <n> --format json` and pass it as `NODE_ID`
-(`lium up <huid> --name ... --ttl ... -y --no-ssh`). Keep the two JSON files.
+If it fails, rent again on a **different** executor: pick the `id` (the UUID;
+0.0.33 rejects the HUID) from `lium ls --gpu <type> --count <n> --format json`
+and pass it as `NODE_ID` (`lium up <id> --name ... --ttl ... -y --no-ssh`).
+Keep the two JSON files.
 
 ## LLM serving on 8 GPUs (vLLM or SGLang)
 
