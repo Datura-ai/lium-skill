@@ -9,8 +9,9 @@ then, read-only and without renting anything, checks with the installed CLI that
 
 Lines whose subcommand is a placeholder (`lium <command>`), chained commands past the first `&&`/`|`, and flags inside
 quoted remote commands are ignored. Known-upcoming flags live in an allow-list file (one `subcommand|--flag|why` per
-line; `*` matches any subcommand) so a doc may describe a flag that ships in a pending release — each entry names the
-PR or ticket that removes it.
+line; `*` as the subcommand matches any subcommand, `*` as the flag allows a subcommand the released CLI does not have
+yet, flags included) so a doc may describe what ships in a pending release — each entry names the PR or ticket that
+removes it.
 
 usage: check-cli-examples.py [--lium PATH] [--allow FILE] [--report FILE] PATH...      exit 1 when any line is stale
 """
@@ -26,7 +27,7 @@ import time
 ap = argparse.ArgumentParser()
 ap.add_argument("paths", nargs="+")
 ap.add_argument("--lium", default=os.environ.get("LIUM", "lium"))
-ap.add_argument("--allow", default=None, help="allow-list: `subcommand|--flag|reason` per line, # comments")
+ap.add_argument("--allow", default=None, help="allow-list: `subcommand|--flag|reason` per line (`sub|*|…` = whole subcommand), # comments")
 ap.add_argument("--report", default=None, help="write the markdown report here too ($GITHUB_STEP_SUMMARY is always appended)")
 args = ap.parse_args()
 
@@ -90,7 +91,10 @@ for f, i, c in cmds:
     rc, h = helptext(sub)
     subs_seen.add(sub)
     if rc != 0:
-        stale.append((f, i, c, f"subcommand `lium {sub}` not found (exit {rc})"))
+        if (sub, "*") in allow:
+            allowed.append((f, i, c, [f"`lium {sub}`"]))
+        else:
+            stale.append((f, i, c, f"subcommand `lium {sub}` not found (exit {rc})"))
         continue
     flags = [t.split("=")[0].strip("[]") for t in parts[j:] if t.startswith("--") and len(t) > 2]
     group_help = helptext(sub.split()[0])[1] if sub.startswith("provider") else ""
