@@ -5,7 +5,7 @@
 #   2. agents/install.sh installs THIS checkout (served locally) into a throwaway HOME for Claude Code, Cursor and Codex,
 #      and what it installed is byte-identical to the repo;
 #   3. the first command the skill tells an agent to run, `lium ls --format json`, answers from the public feed with
-#      the fields the skill names (no key needed: the executor feed is public by design).
+#      the fields the skill names (the feed is public by design; the CLI only needs some key string set).
 # Needs: python3, the `lium` CLI on PATH (CI: `uv tool install lium.io`), network. Exit 0 only when all three pass.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -34,7 +34,8 @@ install_sh() {
 ls_json() {
   local home out
   home=$(mktemp -d)
-  out=$(HOME="$home" LIUM_BASE_URL="${LIUM_BASE_URL:-https://lium.io/api}" timeout 120 lium ls --format json 2>/dev/null) || { echo "lium ls --format json failed"; rm -rf "$home"; return 1; }
+  # the executor feed is public by design (the CLI still wants *a* key configured; any string does for `ls`)
+  out=$(HOME="$home" LIUM_API_KEY="${LIUM_API_KEY:-lium_skill_e2e_no_real_key}" LIUM_BASE_URL="${LIUM_BASE_URL:-https://lium.io/api}" timeout 120 lium ls --format json 2>/dev/null) || { echo "lium ls --format json failed"; rm -rf "$home"; return 1; }
   rm -rf "$home"
   printf '%s' "$out" | python3 -c '
 import json, sys
