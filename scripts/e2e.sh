@@ -37,16 +37,18 @@ ls_json() {
   # the executor feed is public by design (the CLI still wants *a* key configured; any string does for `ls`)
   out=$(HOME="$home" LIUM_API_KEY="${LIUM_API_KEY:-lium_skill_e2e_no_real_key}" LIUM_BASE_URL="${LIUM_BASE_URL:-https://lium.io/api}" timeout 120 lium ls --format json 2>/dev/null) || { echo "lium ls --format json failed"; rm -rf "$home"; return 1; }
   rm -rf "$home"
-  printf '%s' "$out" | python3 -c '
+  printf '%s' "$out" > "${TMPDIR:-/tmp}/lium-ls.json"
+  python3 - "${TMPDIR:-/tmp}/lium-ls.json" <<'PY'
 import json, sys
-nodes = json.load(sys.stdin)
+nodes = json.load(open(sys.argv[1]))
 assert isinstance(nodes, list), type(nodes)
 if not nodes:
-    print("public feed lists 0 nodes right now — shape check only"); sys.exit(0)
+    print("public feed lists 0 nodes right now - shape check only"); sys.exit(0)
 need = {"id", "huid", "gpu_type", "gpu_count", "price_per_hour", "country"}
 missing = need - set(nodes[0])
-assert not missing, f"ls --format json lacks fields the skill names: {sorted(missing)}"
-print(f"lium ls --format json: {len(nodes)} nodes, fields ok ({', '.join(sorted(need))})")'
+assert not missing, "ls --format json lacks fields the skill names: %s" % sorted(missing)
+print("lium ls --format json: %d nodes, fields ok (%s)" % (len(nodes), ", ".join(sorted(need))))
+PY
 }
 
 step check-commands check_commands
