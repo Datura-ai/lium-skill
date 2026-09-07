@@ -609,8 +609,9 @@ lium exec "$NAME" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheade
 ```
 
 If either number is below what you asked for, `lium rm` the pod immediately and
-rent again (another executor: pass its HUID from `lium ls` as `NODE_ID`). Keep
-the `nvidia-smi -L` output; it is the evidence for a refund.
+rent again (another executor: pass its `id` from `lium ls --format json` as
+`NODE_ID`; 0.0.33 rejects the HUID). Keep the `nvidia-smi -L` output; it is the
+evidence for a refund.
 
 ### Pod Gotchas — The First Hour
 
