@@ -1,13 +1,11 @@
 name: Check llms-full.txt is up to date
 
+# Runs on every pull request, not only on the paths that can change llms-full.txt:
+# a required status check that never reports blocks the merge button, so a
+# README-only PR could not merge once `check-drift` is required. The job costs
+# ~0.1 min; the drift result on an unrelated PR is simply "up to date".
 on:
   pull_request:
-    paths:
-      - 'lium/SKILL.md'
-      - 'lium/references/**'
-      - 'scripts/build-llms-full.sh'
-      - 'llms-full.txt'
-      - '.github/workflows/check-llms-full.yml'
   push:
     branches: [main]
 
