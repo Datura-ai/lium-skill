@@ -7,6 +7,8 @@ then, read-only and without renting anything, checks with the installed CLI that
   * the (nested) subcommand exists — `lium <sub…> --help` exits 0;
   * every `--flag` on the line is listed in that subcommand's `--help` (group flags count for `lium provider …`), or
     is parsed by it anyway — `lium <sub> --help --flag` exits 0 — which is how a hidden alias such as `--json` passes.
+    A subcommand that ignores unknown options (`lium mine` forwards them to the validator, so `--help` exits 0 next to
+    any flag) gets no such credit: there only the `--help` text and the allow-list vouch for a flag.
 
 Lines whose subcommand is a placeholder (`lium <command>`), chained commands past the first `&&`/`|`, and flags inside
 quoted remote commands are ignored. Known-upcoming flags live in an allow-list file (one `subcommand|--flag|why` per
@@ -58,18 +60,36 @@ for f in files:
             if not c.startswith("lium --"):
                 cmds.append((f, i, c))
 
+def run_lium(*argv: str) -> tuple[int, str]:
+    """`lium <argv…>`, read-only, 60 s, plain output; (127, the error) when the binary is missing or hangs, so every
+    caller treats a broken CLI as "not proven" rather than as a pass."""
+    try:
+        p = subprocess.run([args.lium, *argv], capture_output=True, text=True, timeout=60,
+                           env={**os.environ, "NO_COLOR": "1", "TERM": "dumb", "HOME": os.environ.get("CHECK_HOME", os.environ.get("HOME", "/tmp"))})
+        return p.returncode, p.stdout + p.stderr
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 127, str(exc)
+
+
 help_cache: dict[str, tuple[int, str]] = {}
 
 
 def helptext(sub: str) -> tuple[int, str]:
     if sub not in help_cache:
-        try:
-            p = subprocess.run([args.lium, *sub.split(), "--help"], capture_output=True, text=True, timeout=60,
-                               env={**os.environ, "NO_COLOR": "1", "TERM": "dumb", "HOME": os.environ.get("CHECK_HOME", os.environ.get("HOME", "/tmp"))})
-            help_cache[sub] = (p.returncode, p.stdout + p.stderr)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            help_cache[sub] = (127, str(exc))
+        help_cache[sub] = run_lium(*sub.split(), "--help")
     return help_cache[sub]
+
+
+ignores_unknown_cache: dict[str, bool] = {}
+
+
+def ignores_unknown_options(sub: str) -> bool:
+    """True when `lium <sub>` swallows options it does not declare (Click `ignore_unknown_options=True`; `lium mine`
+    passes them on to the validator). Detected the same way the CLI is used everywhere here: `--help` next to an option
+    that cannot exist exits 0 only for such a subcommand (2, `No such option`, for the others)."""
+    if sub not in ignores_unknown_cache:
+        ignores_unknown_cache[sub] = run_lium(*sub.split(), "--help", "--no-such-option-check-cli-examples")[0] == 0
+    return ignores_unknown_cache[sub]
 
 
 accept_cache: dict[tuple[str, str], bool] = {}
@@ -79,20 +99,12 @@ def accepts(sub: str, flag: str) -> bool:
     """True when the CLI parses `flag` for `sub` although `--help` does not list it (a Click `hidden=True` option,
     e.g. the `--json` alias of `--format json`). `lium <sub> --help <flag>` exits 0 when the parser knows the flag
     (`--help` is eager, so it prints and exits before any value is used) and 2 on `No such option`; the `=x` form
-    covers a hidden option that takes a value."""
+    covers a hidden option that takes a value. Never true for a subcommand that ignores unknown options: its exit 0
+    proves nothing, so a flag missing from its `--help` stays stale unless the allow-list names it."""
     key = (sub, flag)
     if key not in accept_cache:
-        ok = False
-        for probe in (flag, f"{flag}=x"):
-            try:
-                p = subprocess.run([args.lium, *sub.split(), "--help", probe], capture_output=True, text=True, timeout=60,
-                                   env={**os.environ, "NO_COLOR": "1", "TERM": "dumb", "HOME": os.environ.get("CHECK_HOME", os.environ.get("HOME", "/tmp"))})
-            except (OSError, subprocess.TimeoutExpired):
-                break
-            if p.returncode == 0:
-                ok = True
-                break
-        accept_cache[key] = ok
+        accept_cache[key] = not ignores_unknown_options(sub) and any(
+            run_lium(*sub.split(), "--help", probe)[0] == 0 for probe in (flag, f"{flag}=x"))
     return accept_cache[key]
 
 

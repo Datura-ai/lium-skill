@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # e2e.sh — the skill exercised the way an agent uses it, against the real CLI, without renting anything:
-#   1. every `lium …` command line in SKILL.md, references/ and README parses against the released CLI
-#      (subcommand exists, every --flag accepted; upcoming flags allow-listed in .cli-upcoming.txt with their PR);
+#   1. the checker's negative control passes (scripts/test_check_cli_examples.py: planted stale lines, incl. on
+#      `lium mine`, are reported), then every `lium …` command line in SKILL.md, references/, README and llms.txt parses
+#      against the released CLI (subcommand exists, every --flag accepted; upcoming flags allow-listed in
+#      .cli-upcoming.txt with their PR);
 #   2. agents/install.sh installs THIS checkout (served locally) into a throwaway HOME for Claude Code, Cursor and Codex,
 #      and what it installed is byte-identical to the repo;
 #   3. the first command the skill tells an agent to run, `lium ls --format json`, answers from the public feed with
@@ -14,7 +16,7 @@ FAILED=""
 step() { local name=$1; shift; echo "::group::$name"; "$@"; local rc=$?; echo "::endgroup::"; echo "e2e: $name $([ $rc -eq 0 ] && echo pass || echo FAIL)"; [ $rc -eq 0 ] || FAILED="$FAILED $name"; }
 
 check_commands() {
-  python3 scripts/check-cli-examples.py --allow .cli-upcoming.txt lium README.md llms.txt
+  python3 scripts/test_check_cli_examples.py && python3 scripts/check-cli-examples.py --allow .cli-upcoming.txt lium README.md llms.txt
 }
 
 install_sh() {
