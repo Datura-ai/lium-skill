@@ -193,7 +193,7 @@ run.close()          # remove the warm pod now
 | `machine` | str | `"<count>x<gpu>"` or `"<gpu>"`: `"1xH200"`, `"RTX4090"`, `"2xA100"`. Count defaults to 1. Cheapest matching node is rented. |
 | `requirements` | list, optional | pip packages, installed once per pod into a venv that also sees the image's packages |
 | `template_id` | str, optional | Docker template to rent with (default: the node's default template) |
-| `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min`, or 24 h when `timeout=None` |
+| `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
 | `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
 | `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; release after 0.0.33) |
@@ -203,11 +203,11 @@ run.close()          # remove the warm pod now
 
 **What travels:** only the function's own `def` (decorators/annotations stripped) plus pickled arguments (your bytes, loaded on your pod). The result is not pickled: it comes back as a JSON envelope plus an `.npz` sidecar for numpy arrays, read with `allow_pickle=False`. What round-trips, each as its own type: `None`, `bool`, `int`, `float`, `str`, `bytes`; `list`, `tuple`, `set`, `frozenset`, `dict` of those, nested; `datetime`/`date`/`time`/`timedelta`, `Decimal`, `pathlib.Path`, `uuid.UUID`; `numpy.ndarray` (any dtype without Python objects) and numpy scalars. Anything else — a tensor, `torch.__version__`, a dataclass, an `Enum` — is a `lium.ResultEncodingError` raised on the pod naming the type; return `str(...)`, `.tolist()`, `.cpu().numpy()`, `dict(x)` instead. Import inside the body; a closure variable or a module-level name used inside is refused when the function is decorated (`LiumError` naming it). Methods, nested functions and `async def` work; lambdas do not.
 
-**Errors:** the remote exception is re-raised with its own type; `e.__cause__` is `lium.RemoteExecutionError` with `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`. Timeout → `RemoteExecutionError: <fn> exceeded timeout=Ns and was killed`. Prints from the pod appear on the caller's terminal while the function runs.
+**Errors:** a remote exception of a builtin type (`ValueError`, `RuntimeError`, …) is re-raised with its own type and `e.__cause__` is `lium.RemoteExecutionError` with `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; any other class (`torch.OutOfMemoryError`, …) arrives as `RemoteExecutionError` itself, its name in `exception_type`, no `__cause__`. Timeout → `RemoteExecutionError: <fn> exceeded timeout=Ns and was killed`, no `__cause__`; no matching node or a failed rental → `LiumError`. Prints from the pod appear on the caller's terminal while the function runs.
 
 **Progress lines (stderr):**
 ```
-[lium] run: renting 1xH200 $2.75/h (swift-fox-c8, United States), removal in 1.5h
+[lium] run: renting 1xH200 $2.75/h (swift-fox-c8, United States), removal in 0.6h
 [lium] run: pod ready in 45s
 [lium] run: preparing environment (2 package(s): transformers, accelerate)
 [lium] run: environment ready in 31s

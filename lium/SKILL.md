@@ -641,7 +641,7 @@ lium rm work-pod -y
 
 ## Run One Python Function on a GPU (no pod scripting)
 
-When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` from the moment it is rented.
+When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section is the `lium` release after 0.0.33 (lium#208); on 0.0.33 the decorator takes only `machine`, `template_id`, `cleanup`, `requirements`, picks the first node whose name contains the string, and results must be JSON-serialisable.
 
 ```python
 import lium
@@ -659,14 +659,14 @@ def generate(prompt: str) -> str:
 try:
     print(generate("Who discovered penicillin?"))    # cold: ~1-2 min (rent, boot, install); warm: ~20 s
     print(generate("Name one antibiotic."))          # reuses the warm pod
-except Exception as e:                                # a remote raise: the same type, e.__cause__ is lium.RemoteExecutionError;
+except Exception as e:                                # a builtin raised remotely: the same type, e.__cause__ is lium.RemoteExecutionError;
     cause = e.__cause__ if isinstance(e.__cause__, lium.RemoteExecutionError) else None   # a timeout, no node, a failed rental: no cause
     print(type(e).__name__, e, cause.remote_traceback if cause else "")
 finally:
     generate.close()                                  # remove the warm pod now (else: keep_warm + 2 min later)
 ```
 
-Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH200"`, `"RTX4090"`; count defaults to 1 — `"A100"` is one A100, not eight). Import inside the function; a module-level import/constant/helper used inside is refused at definition time (it would be a `NameError` on the pod). Return plain Python types (`str()`, `.tolist()`, `.cpu().numpy()`), not tensors or `torch.__version__`. Torch is already on the default template — do not put it in `requirements`. `f.map(items)` runs a batch on one pod; `f.local(x)` or `LIUM_MACHINE_LOCAL=1` runs the function locally for tests; `quiet=True` drops the `[lium]` progress lines (the function's own prints still stream). Every one of these (map, local, LIUM_MACHINE_LOCAL, quiet) requires the `lium` release after 0.0.33 (lium#208) — not one of them exists in 0.0.33; on 0.0.33 the decorator picks the first node whose name contains the string and results must be JSON-serialisable.
+Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH200"`, `"RTX4090"`; count defaults to 1 — `"A100"` is one A100, not eight). Import inside the function; a module-level import/constant/helper used inside is refused at definition time (it would be a `NameError` on the pod). Return plain Python types (`str()`, `.tolist()`, `.cpu().numpy()`), not tensors or `torch.__version__`. Torch is already on the default template — do not put it in `requirements`. `f.map(items)` runs a batch on one pod; `f.local(x)` or `LIUM_MACHINE_LOCAL=1` runs the function locally for tests; `quiet=True` drops the `[lium]` progress lines (the function's own prints still stream). Like the rest of this section (`timeout`, `keep_warm`, `close()`, `RemoteExecutionError`, the node pick), every one of these (map, local, LIUM_MACHINE_LOCAL, quiet) requires the `lium` release after 0.0.33 (lium#208) — not one of them exists in 0.0.33.
 
 ## Detailed References
 
