@@ -1,169 +1,228 @@
 # Lium Python SDK Reference
 
+Written against `lium.io` **0.0.33** (`lium/sdk/client.py`). Signatures below are
+copied from the source; when in doubt, `python -c "import lium, inspect; help(lium.Lium)"`
+is the authority.
+
 ## Table of Contents
 
 - [Installation & Auth](#installation--auth)
 - [High-Level SDK (lium.sdk.Lium)](#high-level-sdk-liumsdklium)
+- [Agent Recipe](#agent-recipe)
 - [@machine Decorator](#machine-decorator)
-- [Low-Level SDK (lium.Client)](#low-level-sdk-liumclient)
 - [Models](#models)
 - [Exceptions](#exceptions)
 
 ## Installation & Auth
 
 ```bash
-pip install lium.io      # CLI + high-level SDK
-pip install lium-sdk     # low-level SDK only
+pip install lium.io        # CLI + SDK in one package (or: uv tool install lium.io)
 ```
 
-Authentication (auto-loaded in priority order):
-1. Direct: `Lium(api_key="...")` or `Client(api_key="...")`
-2. Environment: `LIUM_API_KEY`
-3. Config file: `~/.lium/config.ini` (set via `lium init`)
+The old `lium-sdk` package on PyPI is **deprecated** — its last release only says
+"renamed to lium.io". There is no separate low-level `lium.Client` /
+`lium.AsyncClient` in `lium.io`; `import lium` re-exports `lium.sdk` (`lium.Lium`
+is `lium.sdk.Lium`).
 
-SSH keys auto-discovered from `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`, `~/.ssh/id_ecdsa`.
+Authentication is loaded by `Config.load()` in this order:
+
+1. `LIUM_API_KEY` environment variable
+2. `~/.lium/config.ini` → `[api] api_key` (written by `lium init` / `lium signup`)
+
+`Lium()` takes **no `api_key` keyword**. To pass a key explicitly build a `Config`:
+
+```python
+from pathlib import Path
+from lium.sdk import Lium, Config
+
+lium = Lium()                                        # env var or config.ini
+lium = Lium(config=Config(api_key="sk_...", ssh_key_path=Path("~/.ssh/id_ed25519").expanduser()))
+```
+
+`Config.load()` raises `ValueError("No API key found. Set LIUM_API_KEY or
+~/.lium/config.ini")` when neither source has a key. The SSH private key is
+auto-discovered from `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`, `~/.ssh/id_ecdsa` (first
+that exists); its `.pub` is what gets registered on the pod. `LIUM_BASE_URL`
+(default `https://lium.io/api`) points the SDK at another backend.
 
 ---
 
 ## High-Level SDK (lium.sdk.Lium)
 
-Full-featured SDK included with `pip install lium.io`. Mirrors CLI capabilities.
-
 ```python
 from lium.sdk import Lium
 lium = Lium()
 ```
 
-Signatures below follow Python notation: everything after `*` is keyword-only and
-raises `TypeError` when passed positionally. `lium.exec(pod, "nvidia-smi")` fails —
-it has to be `lium.exec(pod, command="nvidia-smi")`.
+Signatures follow Python notation: everything after `*` is keyword-only and raises
+`TypeError` when passed positionally. `lium.exec(pod, "nvidia-smi")` fails — it has
+to be `lium.exec(pod, command="nvidia-smi")`. Methods that take a `pod` want a
+`PodInfo` (from `ps()` / `wait_ready()`), not an id string, unless stated.
+
+Every HTTP call goes through one `_request` with a 30 s timeout and **3 attempts
+with back-off on 429, 5xx and connection errors** — including `POST` rents. A rent
+that times out client-side may therefore be retried and create a second pod;
+give every pod a unique `name` and check `ps()` before retrying yourself.
 
 ### Discovery
 
-| Method | Description |
-|--------|-------------|
-| `ls(*, gpu_type=, gpu_count=, lat=, lon=, max_distance_miles=)` | List available executors |
-| `ps()` | List active pods |
-| `pod(pod_id)` | Get pod details |
-| `get_executor(executor_id)` | Get executor details |
-| `templates(filter=, only_my=)` | List templates |
-| `gpu_types()` | List available GPU types |
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `ls(*, gpu_type=None, gpu_count=None, lat=None, lon=None, max_distance_miles=None, min_cuda_version=None)` | `list[ExecutorInfo]` | `gpu_type` is a short name (`"H200"`, `"RTX4090"`); `gpu_count` matches nodes with exactly that many GPUs. No country or price filter — filter the list yourself. |
+| `get_executor(executor_id)` | `ExecutorInfo \| None` | Linear scan of `ls()` by UUID. |
+| `gpu_types()` | `set[str]` | Machine names advertised by `/machines`. |
+| `ps()` | `list[PodInfo]` | Your pods. `executor.price_per_hour` is the pod's billed $/h. |
+| `pod(pod_id)` | `dict` | Raw `GET /pods/{id}` payload (template, executor, ports, status…). |
+| `templates(filter=None, only_my=False)` | `list[Template]` | Substring match on image or name. Objects carry `.id`. |
+| `get_template(template_id)` | `Template \| None` | `GET /templates/{id}`; swallows errors and returns `None`. |
+| `get_template_by_image_name(image_name, image_tag)` | `Template \| None` | Exact image + tag match. |
+| `default_docker_template(executor_id)` | `Template` | The PyTorch template the node's driver supports; what `lium up` uses without `-t`. |
+| `get_deployment_estimate(executor_id, template_id)` | `dict` | `estimated_seconds`, `is_slow_machine`, `warning_message`, `is_cached_template`, `docker_image_size`. |
 
 ### Pod Lifecycle
 
-| Method | Description |
-|--------|-------------|
-| `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | **Coming with lium#209 — not in 0.0.37, the latest release** (`pip show lium.io`; until it ships use `ls()` + `up(executor_id=)` below). Rent the cheapest node matching a spec in one call (the backend picks when `GET /version` lists `rent_by_spec` — production does today; against an older backend the client picks the cheapest exact match; `dry_run=True` prices without renting). Returns `RentResult` with `.pod`, `.executor`, `.price_per_hour` |
-| `up(*, executor_id, name=, template_id=, volume_id=, ports=, ssh_keys=)` | Create pod on a named node |
-| `down(pod)` | Stop/delete pod |
-| `rm(pod)` | Alias for `down()` |
-| `reboot(pod, volume_id=)` | Reboot pod |
-| `wait_ready(pod, *, timeout=)` | Poll until pod is RUNNING |
-| `logs(pod_id, *, tail=, follow=)` | Stream pod logs |
-| `edit(pod_id, **kwargs)` | Edit pod template |
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | `RentResult` | **Coming with lium#209 — not in 0.0.37, the latest release** (`pip show lium.io`; until it ships use `ls()` + `up(executor_id=)` below). Rent the cheapest node matching a spec in one call (the backend picks when `GET /version` lists `rent_by_spec` — production does today; against an older backend the client picks the cheapest exact match; `dry_run=True` prices without renting). `.pod`, `.executor`, `.price_per_hour`. |
+| `up(*, executor_id, name="Your Pod", template_id=None, dockerfile_content=None, volume_id=None, ports=None, ssh_keys=None, ssh_name=None, enable_volume_encryption=True, backup_id=None, restore_path=None)` | `dict` | Raw rent response (`id`, `pod_name`, `status`, …). **Not** a `PodInfo` — pass it to `wait_ready`. Registers your SSH public key server-side first. `template_id` and `dockerfile_content` are mutually exclusive; `backup_id`/`restore_path` go together. Raises `ValueError` for an unknown executor or when no SSH key is found. |
+| `wait_ready(pod, *, timeout=300, poll_interval=10)` | `PodInfo \| None` | `pod` may be an id string, a `PodInfo` or the dict from `up()`. Polls `ps()` until `status == "RUNNING"` and `ssh_cmd` is set. **Returns `None` on timeout** — the pod may still be provisioning and billing; check `ps()` and `down()` it. |
+| `down(pod)` / `rm(pod)` | `dict` | `DELETE /pods/{id}`. Irreversible. |
+| `reboot(pod, volume_id=None)` | `dict` | Re-creates the container; only the volume (`/workspace` by default) survives. |
+| `logs(pod_id, *, tail=100, follow=False)` | `Generator[bytes]` | Container PID 1 output. Takes an **id string**. |
+| `schedule_termination(pod, *, termination_time)` | `dict` | `termination_time` is an ISO 8601 UTC string, e.g. `"2026-09-05T18:00:00Z"`. This is what `lium up --ttl` calls. |
+| `cancel_scheduled_termination(pod)` | `dict` | |
+| `switch_template(pod, *, template_id)` | `PodInfo` | `PUT /pods/{id}/switch-template`. |
+| `edit(pod_id, **kwargs)` | `dict` | Merges kwargs into the pod's template and `PUT`s it. |
+| `install_jupyter(pod, *, jupyter_internal_port)` | `dict` | |
+
+There is no `wait=`, `ttl=`, `verify_gpus=` or context-manager form of `up()` in
+0.0.33 — compose them yourself (see [Agent Recipe](#agent-recipe)). Those are
+tracked as upcoming SDK work.
 
 ### Remote Execution
 
-| Method | Description |
-|--------|-------------|
-| `exec(pod, *, command, env=)` | Execute command, returns `{"stdout", "stderr", "exit_code", "success"}` |
-| `stream_exec(pod, *, command, env=)` | Stream execution output |
-| `exec_all(pods, *, command, env=, max_workers=)` | Execute on multiple pods |
-| `ssh(pod)` | Get SSH command string |
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `exec(pod, *, command, env=None)` | `dict` | `{"stdout", "stderr", "exit_code", "success"}`. Runs over paramiko with stdin closed. **No timeout** — wrap the remote side in `timeout 600 bash -lc '...'` when a hang would block you. Blocks until every process holding stdout/stderr exits, so detach long jobs (below). |
+| `stream_exec(pod, *, command, env=None)` | `Generator[dict]` | Yields `{"type": "stdout"\|"stderr", "data": str}` with a PTY. |
+| `exec_all(pods, *, command, env=None, max_workers=10)` | `list[dict]` | Threaded `exec` across pods; each result carries `"pod"`. |
+| `ssh(pod)` | `str` | `ssh -i <key> ... root@host -p port` — a ready command line. |
+| `ssh_connection(pod, timeout=30)` | context manager → `paramiko.SSHClient` | For SFTP or custom channels. |
+
+`env` values are exported with `export K="v"` — quote-safe for simple values only.
 
 ### File Transfer
 
-| Method | Description |
-|--------|-------------|
-| `scp(pod, *, local, remote)` | Copy file to pod |
-| `upload(pod, *, local, remote)` | Upload (alias for scp) |
-| `download(pod, *, remote, local)` | Download file from pod |
-| `rsync(pod, *, local, remote)` | Sync directory |
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `scp(pod, *, local, remote)` / `upload(pod, *, local, remote)` | `None` | SFTP **single file**, local → pod. `remote` must be a file path, not a directory. |
+| `download(pod, *, remote, local)` | `None` | SFTP single file, pod → local. |
+| `rsync(pod, *, local, remote)` | `None` | `rsync -avz` **local → pod only**; raises `RuntimeError` on failure. No download direction, no `--bwlimit`, and `-z` is always on. |
 
-### Template Management
+For directories coming **back**, or for bandwidth-limited / resumable transfers,
+call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_path`
+(recipe below).
 
-| Method | Description |
-|--------|-------------|
-| `default_docker_template(executor_id)` | Get executor's default template |
-| `create_template(...)` | Create custom template |
-| `update_template(template_id, name=, docker_image=, ...)` | Update template |
-| `switch_template(pod, *, template_id)` | Change pod's template |
-| `wait_template_ready(template_id, timeout=)` | Wait for template build |
+### Templates, Volumes, Backups
 
-### Volume Management
-
-| Method | Description |
-|--------|-------------|
-| `volumes()` | List all volumes |
-| `volume(volume_id)` | Get volume info |
-| `volume_create(name, *, description=)` | Create volume |
-| `volume_update(volume_id, *, name=, description=)` | Update volume |
-| `volume_delete(volume_id)` | Delete volume |
-
-### Backup Management
-
-| Method | Description |
-|--------|-------------|
-| `backup_create(pod, *, path=, frequency_hours=, retention_days=)` | Set up auto-backups |
-| `backup_now(pod, *, name, description=)` | Trigger immediate backup |
-| `backup_config(pod)` | Get backup config |
-| `backup_list()` | List all backups |
-| `backup_logs(pod)` | Get backup execution logs |
-| `backup_delete(config_id)` | Delete backup config |
-| `restore(pod, *, backup_id, restore_path=)` | Restore from backup |
-
-### Pod Scheduling
-
-| Method | Description |
-|--------|-------------|
-| `schedule_termination(pod, *, termination_time)` | Auto-terminate at specific time |
-| `cancel_scheduled_termination(pod)` | Cancel auto-termination |
-
-### Jupyter
-
-| Method | Description |
-|--------|-------------|
-| `install_jupyter(pod, *, jupyter_internal_port)` | Install Jupyter on pod |
+| Method | Notes |
+|--------|-------|
+| `create_template(name, docker_image, docker_image_digest="", docker_image_tag="latest", ports=None, start_command=None, **kwargs)` | Positional-friendly. kwargs: `category` (default `"UBUNTU"`), `is_private` (`True`), `volumes` (`["/workspace"]`), `description`, `environment`, `entrypoint`, `one_time_template`, `readme`. Image must be Debian/Ubuntu-based (verification installs `openssh-server` with apt). |
+| `update_template(template_id, name, docker_image, docker_image_digest, docker_image_tag="latest", ports=None, start_command=None, **kwargs)` | Only your own templates; triggers re-verification. |
+| `wait_template_ready(template_id, timeout=300)` | `Template` on `VERIFY_SUCCESS`, `None` on timeout, raises `LiumError` on `VERIFY_FAILED`. |
+| `volumes()`, `volume(volume_id)`, `volume_create(name, *, description="")`, `volume_update(volume_id, *, name=None, description=None)`, `volume_delete(volume_id)` | `VolumeInfo` objects. |
+| `backup_create(pod, *, path, frequency_hours=6, retention_days=7)` | `path` is required; warns when it equals the whole volume. |
+| `backup_now(pod, *, name, description="")` | Immediate backup. |
+| `backup_config(pod)`, `backup_list()`, `backup_logs(pod)`, `backup_logs_all()`, `backup_log(backup_id)` | Config and history. |
+| `backup_delete(config_id)`, `backup_cancel(backup_id)`, `backup_log_delete(backup_id)` | Remove the config / cancel an active backup / delete a completed backup's data. |
+| `restore(pod, *, backup_id, restore_path=None)` | Default `restore_path` is `pod.default_restore_path` (`<volume>/restored`). |
+| `restore_logs(pod)`, `restore_cancel(restore_id)` | |
+| `resolve_backup_id(short)`, `resolve_restore_id(short)` | Expand the 8-char ids the CLI prints. |
 
 ### Account
 
-| Method | Description |
-|--------|-------------|
-| `balance()` | Get account balance |
-| `wallets()` | List connected wallets |
-| `add_wallet(bt_wallet)` | Add Bittensor wallet |
-| `get_my_user_id()` | Get current user ID |
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `balance()` | `float` | USD, from `GET /users/me`. Raises `LiumAuthError` on a bad key — the cheapest auth check. |
+| `get_my_user_id()` | `str` | |
+| `list_ssh_keys()` / `register_ssh_key(*, name, public_key)` | `list[SSHKey]` / `SSHKey` | `up()` calls this for you. |
+| `topup_currencies(refresh=False)` | `list[dict]` | Stablecoin `{code, network, …}` pairs. |
+| `topup_create_invoice(amount, crypto_currency, crypto_network)` | `dict` | `deposit_address`, `crypto_amount`, `expires_at`, … |
+| `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd)`, `company_wallet(app_id)` | | Bittensor funding plumbing used by `lium fund`. |
 
-### Complete Example
+---
+
+## Agent Recipe
+
+Everything an autonomous run needs, with the safety rails the SDK does not add
+on its own: unique name, TTL, GPU-count check, detached job, resumable pull,
+guaranteed teardown.
 
 ```python
-from lium.sdk import Lium
+import shlex, subprocess, time, uuid
+from datetime import datetime, timedelta, timezone
+from lium.sdk import Lium, LiumError
 
 lium = Lium()
+name = f"job-{uuid.uuid4().hex[:6]}"          # unique: lets you find it in ps() after a timeout
+want = 8
 
-# lium.io 0.0.37 (the latest release): list, pick the cheapest 8xA100 yourself, rent it by id
-executors = lium.ls(gpu_type="A100", gpu_count=8)
-cheapest = min(executors, key=lambda e: e.price_per_hour)
-pod = lium.wait_ready(lium.up(executor_id=cheapest.id, name="my-pod"), timeout=600)
+nodes = [e for e in lium.ls(gpu_type="H200", gpu_count=want) if e.tier != "spot"]
+if not nodes:
+    raise SystemExit("no matching node")
+node = min(nodes, key=lambda e: e.price_per_gpu)
 # Coming with lium#209 (not in 0.0.37): the same in one call, no listing
-#   rented = lium.rent(gpu_type="A100", gpu_count=8, min_cpus=32, name="my-pod")
+#   rented = lium.rent(gpu_type="H200", gpu_count=want, name=name)
 #   pod = lium.wait_ready(rented.pod, timeout=600)
 
-# Execute
-result = lium.exec(pod, command="nvidia-smi")
-print(result["stdout"])
+pod = None
+try:
+    created = lium.up(executor_id=node.id, name=name)
+    pod = lium.wait_ready(created, timeout=600)
+    if pod is None:                              # still billing — find it and stop it
+        pod = next((p for p in lium.ps() if p.name == name), None)
+        raise LiumError("pod did not become ready")
 
-# Files
-lium.upload(pod, local="train.py", remote="/root/train.py")
-lium.exec(pod, command="python /root/train.py")
-lium.download(pod, remote="/root/model.pt", local="./model.pt")
+    # TTL — the equivalent of `lium up --ttl 4h`
+    until = (datetime.now(timezone.utc) + timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lium.schedule_termination(pod, termination_time=until)
 
-# Backups
-lium.backup_create(pod, path="/root/data", frequency_hours=24, retention_days=7)
+    # Verify what you pay for: billed count vs devices the container can see
+    billed = pod.executor.gpu_count if pod.executor else None
+    seen = int(lium.exec(pod, command="nvidia-smi -L | wc -l")["stdout"].strip() or 0)
+    if seen != want or (billed is not None and billed != want):
+        raise LiumError(f"GPU count mismatch: requested {want}, billed {billed}, visible {seen}")
 
-# Cleanup
-lium.down(pod)
+    # Detached job — exec() would otherwise block until the job ends
+    job = "cd /workspace && python train.py"
+    r = lium.exec(pod, command=(
+        "mkdir -p /workspace/logs && nohup setsid bash -lc "
+        + shlex.quote(job) + " > /workspace/logs/train.log 2>&1 < /dev/null & echo $!"))
+    pid = int(r["stdout"].strip())
+
+    while lium.exec(pod, command=f"kill -0 {pid}")["success"]:
+        time.sleep(60)
+        print(lium.exec(pod, command="tail -n 3 /workspace/logs/train.log")["stdout"])
+
+    # Pull results: rsync back, resumable, no compression for binary output
+    ssh = f"ssh -p {pod.ssh_port} -i {lium.config.ssh_key_path} -o StrictHostKeyChecking=no"
+    subprocess.run(["rsync", "-a", "--partial", "--inplace", "--bwlimit=20000", "-e", ssh,
+                    f"{pod.username}@{pod.host}:/workspace/out/", "./out/"], check=True)
+finally:
+    if pod is not None:
+        lium.down(pod)                           # always; the TTL is only the backstop
 ```
+
+Notes:
+
+- `exec(..., command="kill -0 PID")` is a cheap liveness probe; `tail -n` the log
+  file rather than streaming it.
+- For pod-to-pod copies (edit on a cheap pod after an 8-GPU render), rsync from
+  inside the source pod to the destination's `host:port`; the destination must
+  trust the source's SSH key — generate one on the source with `ssh-keygen -N ""`
+  and append its `.pub` to the destination's `~/.ssh/authorized_keys` via `exec`.
+- Keep `HF_HOME=/workspace/hf` and venvs under `/workspace` — `/root` is an
+  encrypted FUSE mount and is slow for large files (details in the skill).
 
 ---
 
@@ -187,7 +246,6 @@ answer = run("Qwen/Qwen2.5-0.5B-Instruct", "What is the capital of France?")
 run.close()          # remove the warm pod now
 ```
 
-**Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `machine` | str | `"<count>x<gpu>"` or `"<gpu>"`: `"1xH200"`, `"RTX4090"`, `"2xA100"`. Count defaults to 1. Cheapest matching node is rented. |
@@ -218,176 +276,114 @@ run.close()          # remove the warm pod now
 
 Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires the decorator surface since 0.0.40 (lium#208).
 
----
-
-## Low-Level SDK (lium.Client)
-
-Resource-based client from `pip install lium-sdk`. Context-manager pattern.
-
-### Sync Client
-
-```python
-import lium
-
-with lium.Client(api_key="optional") as client:
-    pods = client.pods.list()
-```
-
-### Async Client
-
-```python
-import asyncio, lium
-
-async def main():
-    async with lium.AsyncClient() as client:
-        pods = await client.pods.list()
-
-asyncio.run(main())
-```
-
-### Resources
-
-**client.pods:**
-| Method | Description |
-|--------|-------------|
-| `list()` → `list[PodList]` | List user's pods |
-| `retrieve(id, wait_until_running=False, timeout=300)` → `Pod` | Get pod, optionally wait |
-| `create(id_in_site, pod_name, template_id, user_public_key)` → `Pod` | Low-level create |
-| `delete(id_in_site)` → `None` | Delete pod |
-| `list_executors(filter_query=None)` → `list[Executor]` | List available machines |
-| `easy_deploy(machine_query, docker_image=, dockerfile=, template_id=, pod_name=)` → `Pod` | High-level deploy |
-
-**machine_query format for easy_deploy:**
-- `"H100"` — any H100
-- `"1xA6000"` — exactly 1x A6000
-- `"2xA100"` — exactly 2x A100
-- `"H200,A100"` — H200 or A100
-
-**client.templates:**
-| Method | Description |
-|--------|-------------|
-| `list()` → `list[Template]` | List templates |
-| `retrieve(template_id)` → `Template` | Get template |
-| `create(...)` → `Template` | Create template |
-| `delete(template_id)` → `None` | Delete template |
-
-**client.ssh_keys:**
-| Method | Description |
-|--------|-------------|
-| `list()` → `list[SSHKey]` | List uploaded SSH keys |
-| `create(name: str, public_key: str)` → `SSHKey` | Upload public key |
-| `delete(key_id: UUID)` → `None` | Remove SSH key |
-
-**client.docker_credentials:**
-| Method | Description |
-|--------|-------------|
-| `list()` → `list[DockerCredentials]` | List stored registry credentials |
-| `create(registry: str, username: str, password: str)` → `DockerCredentials` | Add registry credentials (for private images) |
-| `delete(cred_id: UUID)` → `None` | Remove credentials |
 
 ---
 
 ## Models
 
-### ExecutorInfo (high-level SDK)
+Plain dataclasses (`lium.sdk.models`). Convert with `dataclasses.asdict(obj)`.
+
+### ExecutorInfo
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `UUID` | Executor identifier |
-| `huid` | `str` | Human-readable ID (e.g. "cosmic-hawk-f2") |
-| `gpu_type` | `str` | GPU model ("H100", "A100", etc.) |
-| `gpu_count` | `int` | Number of GPUs |
-| `price_per_hour` | `float` | USD per hour |
-| `location` | `str` | Country/region |
-| `specs` | `dict` | Hardware specs (RAM, storage, etc.) |
-| `status` | `str` | Availability status |
-| `docker_in_docker` | `bool` | DinD support |
-| `ip` | `str` | Machine IP |
+| `id` | `str` | Executor UUID (pass to `up(executor_id=…)`) |
+| `huid` | `str` | Human-readable id derived from the UUID (`cosmic-hawk-f2`) |
+| `machine_name` | `str` | Full machine name, e.g. `NVIDIA H200` |
+| `gpu_type` | `str` | Short type parsed from the name (`H200`, `RTX4090`, …) |
+| `gpu_count` | `int` | GPUs on the node |
+| `price_per_hour` | `float` | USD/h for the whole node |
+| `price_per_gpu` | `float` | USD/h per GPU |
+| `location` | `dict` | `{"country": ..., "country_code": ..., ...}` when known |
+| `specs` | `dict` | Raw specs: `gpu.details[].name`, `gpu.driver`, `ram`, `hard_disk`, … |
+| `status` | `str` | |
+| `docker_in_docker` | `bool` | sysbox runtime available |
+| `ip` | `str` | Executor IP |
+| `available_port_count` | `int \| None` | |
+| `effective_upload_speed_mbps` / `effective_download_speed_mbps` | `float \| None` | Also as properties `upload_speed` / `download_speed` (0.0 when unknown) |
+| `max_cuda_version` | `float \| None` | Driver's CUDA ceiling, e.g. `13.0` |
+| `tier` | `str \| None` | `"secure"` or `"spot"` (reclaimable) |
 
-### Executor (low-level SDK)
+Properties: `driver_version` (str), `gpu_model` (first GPU's full name from specs).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `UUID` | Executor identifier |
-| `gpu_type` | `str` | GPU model |
-| `gpu_count` | `int` | Number of GPUs |
-| `price` | `float` | USD per hour |
-| `location` | `str` | Country/region |
-| `driver_version` | `str` | NVIDIA driver version |
-| `docker_in_docker` | `bool` | DinD support |
-
-### PodInfo / Pod
+### PodInfo
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `UUID` | Pod identifier |
-| `name` | `str` | Pod name |
-| `status` | `str` | "RUNNING", "STOPPED", "PENDING", etc. |
-| `huid` | `str` | Human-readable ID |
-| `ssh_cmd` | `str` | Ready-to-use SSH command |
-| `ssh_ip` | `str` | SSH host |
-| `ssh_port` | `int` | SSH port |
-| `ports` | `list[dict]` | Allocated port mappings |
-| `executor` | `Executor` | Associated executor info |
-| `template` | `Template` | Docker template used |
-| `created_at` | `datetime` | Creation timestamp |
-| `removal_scheduled_at` | `datetime | None` | Scheduled termination time |
-| `jupyter_url` | `str | None` | Jupyter URL if enabled |
+| `id` | `str` | Pod UUID |
+| `name` | `str` | Pod name (`pod_name` in the API) |
+| `status` | `str` | `PENDING`, `RUNNING`, `FAILED`, `CREATION_FAILED`, … |
+| `huid` | `str` | Human-readable id |
+| `ssh_cmd` | `str \| None` | `ssh root@<host> -p <port>` once ready |
+| `ports` | `dict` | Internal → external port map |
+| `created_at` / `updated_at` | `str` | ISO timestamps |
+| `executor` | `ExecutorInfo \| None` | `executor.gpu_count` is the **billed** GPU count; `executor.price_per_hour` the billed $/h |
+| `template` | `dict` | Raw template payload (`id`, `name`, `docker_image`, `volumes`, …) |
+| `removal_scheduled_at` | `str \| None` | TTL / scheduled termination |
+| `jupyter_installation_status`, `jupyter_url` | `str \| None` | |
+| `enable_volume_encryption`, `volume_encryption_status` | `bool \| None`, `str \| None` | |
+
+Properties: `host`, `username`, `ssh_port` (parsed from `ssh_cmd`; `ssh_port`
+defaults to 22), `volume_path` (first template volume, default `/root`),
+`default_restore_path` (`<volume>/restored`). There is **no** `started_at`,
+`restart_count` or `spend_to_date` — the API does not expose them yet; compute
+spend as `(now − created_at) × executor.price_per_hour` like `lium ps` does.
 
 ### Template
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `UUID` | Template identifier |
-| `name` | `str` | Template name |
-| `huid` | `str` | Human-readable ID |
-| `docker_image` | `str` | Docker image name |
-| `docker_image_tag` | `str` | Image tag |
-| `category` | `str` | Template category (ml, web, etc.) |
-| `status` | `str` | Build status |
+| Field | Type |
+|-------|------|
+| `id`, `huid`, `name` | `str` |
+| `docker_image`, `docker_image_tag` | `str` |
+| `category` | `str` (`PYTORCH`, `UBUNTU`, `DOCKER`, …) |
+| `status` | `str` (`VERIFY_SUCCESS`, `VERIFY_PENDING`, `VERIFY_FAILED`, …) |
 
 ### VolumeInfo
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `UUID` | Volume identifier |
-| `huid` | `str` | Human-readable ID |
-| `name` | `str` | Volume name |
-| `description` | `str` | Volume description |
-| `current_size_bytes` | `int` | Current storage used |
-| `current_file_count` | `int` | Number of files |
+`id`, `huid`, `name`, `description`, `created_at`, `updated_at`,
+`current_size_bytes`, `current_file_count`, `current_size_gb`, `current_size_mb`,
+`last_metrics_update`.
 
-### BackupConfig
+### BackupConfig / BackupLog / RestoreLog / SSHKey
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `UUID` | Config identifier |
-| `pod_executor_id` | `UUID` | Associated pod |
-| `backup_frequency_hours` | `int` | Backup interval in hours |
-| `retention_days` | `int` | Days to keep backups |
-| `backup_path` | `str` | Path being backed up |
-| `is_active` | `bool` | Whether backups are enabled |
+- `BackupConfig`: `id`, `huid`, `pod_executor_id`, `backup_frequency_hours`,
+  `retention_days`, `backup_path`, `is_active`, `created_at`, `updated_at`.
+- `BackupLog`: `id`, `huid`, `backup_config_id`, `status`, `started_at`,
+  `completed_at`, `error_message`, `progress`, `stage`, `total_bytes`,
+  `processed_bytes`, `throughput_bytes_per_second`, `estimated_remaining_seconds`, …
+- `RestoreLog`: `id`, `huid`, `backup_id`, `pod_id`, `status`, `progress`,
+  `restore_path`, `stage`, `error_message`, …
+- `SSHKey`: `id`, `name`, `public_key`, `created_at`.
 
 ---
 
 ## Exceptions
 
-High-level SDK (`lium.sdk`):
+All in `lium.sdk` (and re-exported from `lium`):
+
 | Exception | Trigger |
 |-----------|---------|
-| `LiumError` | Base exception |
-| `LiumAuthError` | Invalid API key (401) |
-| `LiumNotFoundError` | Resource not found (404) |
-| `LiumRateLimitError` | Rate limit exceeded (429) |
-| `LiumServerError` | Server errors (5xx) |
-| `PodStartError` | the pod reached a terminal state (`FAILED`, `STOPPED`, gone) while being waited for; a slow pod is `None`, not this (since 0.0.37) |
+| `LiumError` | Base class; also raised for unmapped HTTP errors (`API error <code>: …`) and when `up()` cannot find the pod it created |
+| `LiumAuthError` | 401 — invalid or revoked API key |
+| `LiumPermissionError` | 403 — `Permission denied: Insufficient balance` is the common one |
+| `LiumNotFoundError` | 404 |
+| `LiumRateLimitError` | 429 (retried 3× first) |
+| `LiumServerError` | 5xx (retried 3× first) |
 | `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (since 0.0.40, lium#208) |
 | `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (since 0.0.40, lium#208) |
 
-Enable debug logging:
+`ValueError` (not a `LiumError`) is raised for local problems: no API key, no SSH
+key, unknown executor id, conflicting arguments. `RuntimeError` comes from
+`rsync()`. paramiko exceptions (`paramiko.SSHException`, `socket.timeout`)
+surface unchanged from `exec()`/`scp()`.
+
+The 403 message does not say which key or account was used. When `balance()`
+works but `up()` says `Insufficient balance`, check that both processes resolve
+the same key (`LIUM_API_KEY` beats `~/.lium/config.ini`).
+
+Debugging: `LIUM_DEBUG=1` or
+
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)
 ```
-
-Or set `LIUM_DEBUG=1` environment variable.

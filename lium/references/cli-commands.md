@@ -1,6 +1,6 @@
 # Lium CLI Command Reference
 
-Written against `lium --version` **0.0.29**. Every flag below appears in that
+Written against `lium --version` **0.0.33**. Every flag below appears in that
 binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
 `lium <command> --help` is the authority, not this file.
 
@@ -13,6 +13,7 @@ binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
 - [lium ls](#lium-ls)
 - [lium up](#lium-up)
 - [lium ps](#lium-ps)
+- [lium describe](#lium-describe)
 - [lium ssh](#lium-ssh)
 - [lium exec](#lium-exec)
 - [lium scp](#lium-scp)
@@ -179,6 +180,16 @@ speed-test average, and neither is CDN throughput. Before a tensor-parallel or
 weight-heavy job on a multi-GPU node, verify on the pod: `nvidia-smi topo -m` (all
 off-diagonal GPU cells `NV#`), `nvidia-smi topo -p2p r` (all `OK`) and a timed download —
 see "Before You Rent 8 GPUs" in SKILL.md.
+`--format json` emits one object per node with these keys: `index`, `id`, `huid`,
+`config` (e.g. `8×H200`), `gpu_type`, `gpu_count`, `price_per_gpu_hour`,
+`price_per_hour`, `country`, `vram_gb`, `ram_gb`, `disk_gb`, `upload_mbps`,
+`download_mbps`, `available_ports`, `docker_in_docker`, `is_pareto`,
+`max_cuda_version`, `tier` (`secure` or `spot`). There is no `--country` or
+`--max-price` filter on `ls`; filter the JSON (`jq`) or use the filters on
+[`lium up`](#lium-up).
+
+`/executors` is a public endpoint: `lium ls` succeeds with an invalid or missing
+API key, so it proves nothing about authentication — use `lium balance` for that.
 
 ## lium up
 
@@ -207,6 +218,9 @@ lium up [OPTIONS] [NODE_ID]
                               "tomorrow 01:00", "2025-10-20 15:30")
   --jupyter                   Install Jupyter Notebook (auto-selects a port)
   --no-ssh                    Create the pod and return instead of opening an SSH session
+  --restore-backup TEXT       Backup ID to restore after the pod starts
+  --restore-to TEXT           New or empty subdirectory for the startup restore
+                              (required together with --restore-backup)
   --image TEXT                Docker image to run (e.g. pytorch/pytorch:2.0)
   --internal-ports TEXT       Internal ports to expose (comma-separated: 22,8000,8080)
   --dockerfile FILE           Build the pod image from this Dockerfile
@@ -222,6 +236,21 @@ lium up [OPTIONS] [NODE_ID]
 
 `--no-ssh` matters for agents: without it `lium up` ends by opening an interactive
 SSH session (or, with `--image`, by streaming container logs).
+
+`lium up` has **no `--format json`**. With `--no-ssh` it prints one line,
+`Pod <huid> (name: <name>, id: <uuid>) ready`, and exits 0. Read the pod record
+afterwards with `lium ps <name> --format json` (or `lium describe <name> --json`).
+Pass `--name` so that lookup is unambiguous.
+
+`-c/--count` is a **filter on the node's GPU count** — it picks a node that has
+exactly that many GPUs; it is not a request that the platform enforces. After
+`up`, compare `gpu_count` in `lium ps --format json` with what you asked for,
+and run `nvidia-smi -L | wc -l` on the pod (see the skill's "Verify what you
+paid for").
+
+`--ttl`/`--until` are applied **after** the pod is running (the termination is
+scheduled with `lium schedules`), so a pod that failed on the way to `RUNNING`
+has no TTL — check `lium ps` and `lium rm` it yourself.
 
 Examples:
 ```bash
@@ -256,7 +285,37 @@ lium ps [OPTIONS] [POD_ID]
 ```
 
 `lium ps --format json` **is supported** and is the way an agent should read pod
-state. There is no `-a/--all` and no `--sort`.
+state. There is no `-a/--all`, no `--sort`, no `--watch` and no `--json` alias
+(`--json` is rejected with "No such option"). Each object carries: `id`, `huid`,
+`name`, `status`, `gpu_type`, `gpu_count`, `config`, `template`, `price_per_hour`,
+`spent_usd` (uptime × price, computed client-side), `uptime`, `created_at`, `ip`,
+`ports` (map of internal → external port), `ssh_cmd`, `removal_scheduled_at`,
+`jupyter_url`.
+
+```bash
+lium ps --format json | jq -r '.[] | "\(.name) \(.status) \(.gpu_count)x\(.gpu_type) $\(.price_per_hour)/h spent $\(.spent_usd)"'
+lium ps my-pod --format json | jq -r '.[0].ssh_cmd'
+```
+
+Pods that are being deleted are not listed; `FAILED`/`CREATION_FAILED` pods stay
+visible for a few minutes.
+
+## lium describe
+
+Show everything known about one pod — ports, GPU, template, billing — as a
+manifest. `POD_ID` is a pod name, HUID or UUID (**not** an index).
+
+```bash
+lium describe [OPTIONS] POD_ID
+  --json   Print the manifest as machine-readable JSON
+```
+
+```bash
+lium describe my-pod
+lium describe my-pod --json | jq .
+```
+
+With `--json` the command never prompts for setup, so it is safe in scripts.
 
 ## lium ssh
 
@@ -295,8 +354,19 @@ lium exec 1 -e API_KEY=xyz "python app.py"
 lium exec 1 --json "python train.py"
 ```
 
-There is no `--timeout` and no `--output`; redirect the output in the shell
-(`lium exec 1 "nvidia-smi" > gpu.txt`).
+There is no `--timeout`, no `--detach` and no `--output` in 0.0.33; redirect the
+output in the shell (`lium exec 1 "nvidia-smi" > gpu.txt`). `exec` waits for the
+remote command **and every child that still holds its stdout/stderr**, so a job
+started with a bare `&` keeps `exec` blocked. Detach it fully:
+
+```bash
+lium exec my-pod "mkdir -p /workspace/logs && nohup setsid bash -lc 'python train.py' > /workspace/logs/train.log 2>&1 < /dev/null & echo PID=\$!"
+```
+
+`--json` prints `{"stdout": ..., "stderr": ..., "exit_code": ...}` on stdout; on a
+failure before the command ran (no such pod, bad script) it prints
+`{"ok": false, "error": {"code": ..., "message": ...}}` on **stderr** and exits
+non-zero.
 
 ## lium scp
 
@@ -324,14 +394,31 @@ There is no `-r/--recursive` and no `-p/--preserve`; use
 
 ## lium rsync
 
-Sync a directory to pods with rsync. It takes no options.
+Sync a **local directory to pods** with rsync. It takes no options, and it only
+goes one way: `LOCAL_PATH` must exist on your machine (the CLI rejects a path that
+does not), so it cannot pull results back.
 
 ```bash
 lium rsync TARGETS LOCAL_PATH [REMOTE_PATH]
   TARGETS      Pod name/ID, index, comma-separated list, or "all"
-  LOCAL_PATH   Local directory to sync
-  REMOTE_PATH  Optional destination path
+  LOCAL_PATH   Local directory to sync (must exist locally)
+  REMOTE_PATH  Optional destination path on the pod
 ```
+
+There is no `--bwlimit`, `--exclude`, `--delete` or download direction. To pull
+results, or to tune the transfer, call `rsync` directly with the SSH details from
+`lium ps --format json` (`ssh_cmd` gives user, host and port; the key is
+`ssh.key_path` in `lium config show`):
+
+```bash
+read -r HOST PORT < <(lium ps my-pod --format json | jq -r '.[0].ssh_cmd | capture("@(?<h>\\S+).*-p (?<p>\\d+)") | "\(.h) \(.p)"')
+rsync -a --partial --inplace --info=progress2 --bwlimit=20000 \
+  -e "ssh -p $PORT -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
+  root@$HOST:/workspace/out/ ./out/
+```
+
+Do not add `-z` for media, checkpoints or other already-compressed data — it
+only burns CPU. Pod → pod copies are covered in the skill's playbook.
 
 ## lium rm
 
@@ -427,8 +514,20 @@ lium templates [SEARCH]
 ```
 
 **Notes**:
-- Without `--template_id`, `lium up` uses the default **PyTorch (CUDA)** template — fastest to start
+- The table shows Name / Image / Tag / Type / Status — **no template id** and no
+  `--format json` in 0.0.33. To get an id for `lium up -t`, read the API
+  directly (the same key the CLI uses):
+  ```bash
+  curl -s https://lium.io/api/templates -H "X-API-Key: $LIUM_API_KEY" \
+    | jq -r '.[] | "\(.id)  \(.docker_image):\(.docker_image_tag)  \(.name)"'
+  ```
+  or use the Python SDK (`Lium().templates("pytorch")` returns objects with `.id`).
+- Without `--template_id`, `lium up` uses the node's default **PyTorch (CUDA)**
+  template — fastest to start. Several `daturaai/pytorch` tags exist (e.g.
+  `...-cuda12.8-...` and `...-cuda13.0...`); pick a CUDA 12.8+/13.0 tag for
+  Blackwell GPUs (B200/B300, RTX PRO 6000, RTX 5090).
 - Default Docker-in-Docker (dind) image: `daturaai/dind`
+- `/templates` is a public endpoint — the command succeeds even with a bad API key.
 
 ## lium volumes
 
@@ -451,22 +550,30 @@ Manage pod backup configurations. `POD_ID` is a pod name/ID or an index from
 ```bash
 lium bk show POD_ID                   # show the backup config
 lium bk set POD_ID [OPTIONS]          # set or update it
-  --path TEXT    Backup path (default: /root)
+  --path TEXT    Explicit path inside the pod volume to back up (REQUIRED)
   --every TEXT   Backup frequency (1h, 6h, 24h)
   --keep TEXT    Retention period (1d, 7d, 30d)
   -y, --yes      Skip the confirmation prompt
-lium bk now POD_ID [OPTIONS]          # trigger an immediate backup
+lium bk now POD_ID [OPTIONS]          # trigger an immediate backup (no prompt, no -y)
   -n, --name TEXT         Backup name (e.g. 'pre-release')
   -d, --description TEXT  Backup description
 lium bk logs [POD_ID] [--id ID]       # backup logs, or details of one backup
+lium bk cancel --id ID [-y]           # cancel an active backup, keep its history
+lium bk delete --id ID [-y]           # delete the stored data of a completed backup
 lium bk restore POD_ID --id ID        # restore a backup (--id is required)
-  --to TEXT      Restore path (default: /root)
+  --to TEXT      New or empty restore subdirectory
+                 (default: <pod volume>/restored, e.g. /workspace/restored)
   -y, --yes      Skip the confirmation prompt
 lium bk restore-logs [POD_ID] [--id ID]
+lium bk restore-cancel --id ID [-y]   # cancel an active restore
 lium bk rm POD_ID [-y]                # remove the backup config
 ```
 
-`--path` on `bk set` is a flag, not a positional: `lium bk set 1 --path /root --every 6h --keep 7d`.
+`--path` on `bk set` is a required flag, not a positional, and there is no
+default: `lium bk set 1 --path /workspace/checkpoints --every 6h --keep 7d`.
+Back up a stable subdirectory rather than the whole volume. A backup can also be
+restored into a brand-new pod at creation time with
+`lium up ... --restore-backup ID --restore-to /workspace/restored`.
 
 ## lium schedules
 
@@ -628,13 +735,13 @@ form accepts is **not** uniform:
 | Form | Example | Accepted by |
 |------|---------|-------------|
 | Name / HUID / UUID | `lium ssh eager-wolf-aa` | every command |
-| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *` — **not** `ps` and **not** `logs` |
+| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *` — **not** `ps`, `describe` or `logs` |
 | Comma list | `lium exec 1,2,3 "cmd"` | `TARGETS` commands only |
 | All | `lium exec all "cmd"` | `TARGETS` commands only |
 
-`lium ps 1` and `lium logs 1` match the literal string `1` against pod names and
-IDs; they do not resolve indices, so they report the pod as not found unless a
-pod is actually named `1`.
+`lium ps 1`, `lium describe 1` and `lium logs 1` match the literal string `1`
+against pod names and IDs; they do not resolve indices, so they report the pod as
+not found unless a pod is actually named `1`.
 
 Indices come from the most recent listing and shift whenever anything is created
 or removed. Prefer names: read them once with `lium ps --format json` and pass
@@ -662,25 +769,27 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | General error |
-| 2 | Configuration error (bad arguments, unreadable script, missing config) |
-| 4 | SSH error |
-| 5 | Pod not found |
+| 1 | General error (node selection, rent, readiness, transfer failed) |
+| 2 | Configuration error (bad arguments, unreadable script, missing API key) |
+| 3 | API error (the API refused or failed the call — includes `Invalid API key`) |
+| 4 | SSH error (could not connect, or no `ssh` client installed) |
+| 5 | Pod not found (nothing matched the target) |
+| 6 | Permission denied (403 — e.g. `Insufficient balance`) |
 
-⚠️ **The exit code alone is not proof of success.** Only three commands are
-reliable:
+Since 0.0.31 every handled error exits non-zero, so `lium <cmd> && next-step`
+is safe for all renter commands. `lium exec` additionally exits with the remote
+command's own exit code. (`lium provider` keeps a separate code map — see its
+`--help`.)
 
-- `lium exec` — exits with the remote command's code, `5` when no pod matched,
-  `2` on a bad argument or unreadable script;
-- `lium rm` — `5` when nothing matched `TARGETS`;
-- `lium up` — `1` when node selection, renting or readiness fails, `2` on a bad
-  argument, `4` when SSH is unavailable.
+Two things still need care:
 
-**Everything else can print `Error: ...` and still exit 0** — including
-`lium ls`, whose API and authentication failures are swallowed the same way as in
-`ssh`, `logs`, `reboot`, `scp`, `rsync`, `port-forward`, `update` and the `bk`
-sub-commands. So `lium ls >/dev/null && echo OK` prints `OK` with a revoked API
-key. Read the output, or use `--format json` / `--json` where it exists, instead
-of branching on `$?` alone. Tracked as **DAH-2593**.
+- `lium ls` and `lium templates` read **public endpoints**: they succeed, and exit
+  0, with a revoked or missing API key. Neither is an auth check — use
+  `lium balance` (exit 3 on a bad key).
+- With `--json` / `--format json`, a failure is a single JSON object on
+  **stderr** — `{"ok": false, "error": {"code": "...", "message": "..."}}` — and
+  stdout stays empty. Parse stdout for the result and the exit code for success.
 
-Codes 3 and 6 exist in the source but no command produces them today.
+```bash
+lium balance --json >/dev/null 2>&1 && echo "auth OK" || echo "auth FAILED ($?)"
+```
