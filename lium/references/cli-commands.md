@@ -252,14 +252,14 @@ state. There is no `-a/--all` and no `--sort`.
 
 ## lium audit
 
-**Not in lium 0.0.33 — lium#160, not released.** Who did what to the account's pods, and
+**Since lium 0.0.37.** Who did what to the account's pods, and
 when: every rent, reboot, edit and delete with the session or API key that requested it;
 entries the platform wrote by itself (a validator reply, a balance stop) say `platform`.
-Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208); against
-today's API it exits `3` with a hint.
+Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208, not
+released); against today's API an API key exits `3` with a hint.
 
 ```bash
-lium audit [OPTIONS]                 # lium#160, not released
+lium audit [OPTIONS]                 # since 0.0.37
   --pod TEXT             Only this pod: id, huid, name or index from the last ps; a deleted
                          pod's full id
   --since TEXT           Only events after this: 24h, 30m, 7d or an ISO timestamp (else exit 2)
@@ -273,9 +273,9 @@ The table — When (UTC) / Pod / What / By — reads oldest first. `By` is `key 
 (a full id passes through so a deleted pod can be queried).
 
 ```bash
-lium audit --since 24h                                              # today — lium#160, not released
-lium audit --pod my-pod                                             # one pod's history — lium#160, not released
-lium audit --json | jq '.[] | select(.actor.api_key_name == "ci")'  # one key's actions — lium#160, not released
+lium audit --since 24h                                              # today
+lium audit --pod my-pod                                             # one pod's history
+lium audit --json | jq '.[] | select(.actor.api_key_name == "ci")'  # one key's actions
 ```
 
 ## lium ssh
@@ -648,7 +648,7 @@ form accepts is **not** uniform:
 | Form | Example | Accepted by |
 |------|---------|-------------|
 | Name / HUID / UUID | `lium ssh eager-wolf-aa` | every command |
-| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *`, `audit --pod` (lium#160, not released) — **not** `ps` and **not** `logs` |
+| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *`, `audit --pod` (since 0.0.37) — **not** `ps` and **not** `logs` |
 | Comma list | `lium exec 1,2,3 "cmd"` | `TARGETS` commands only |
 | All | `lium exec all "cmd"` | `TARGETS` commands only |
 
@@ -706,6 +706,6 @@ script). Under `--json` (`exec`, `describe`, `balance`,
 `{"ok": false, "error": {"code": ..., "message": ...}}`, and stdout stays empty;
 `--format json` (`ls`, `ps`) reports a failure as text.
 
-`lium audit` *(lium#160, not released)* adds nothing to the table: its 401 is
+`lium audit` *(since 0.0.37)* adds nothing to the table: its 401 is
 exit `3` like every other command's, with the hint that if the key works for
 `lium ps` the backend does not yet open `/users/me/events` to API keys.
