@@ -53,7 +53,7 @@ it has to be `lium.exec(pod, command="nvidia-smi")`.
 
 | Method | Description |
 |--------|-------------|
-| `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | **lium.io newer than 0.0.33 only** (not in 0.0.33 or earlier — `pip show lium.io`; pinned installs use `ls()` + `up(executor_id=)` below). Rent the cheapest node matching a spec in one call (backend picks when it advertises rent-by-spec, else the client picks the cheapest exact match; `dry_run=True` prices without renting). Returns `RentResult` with `.pod`, `.executor`, `.price_per_hour` |
+| `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | **Coming with lium#209 — not in 0.0.33, the latest release** (`pip show lium.io`; until it ships use `ls()` + `up(executor_id=)` below). Rent the cheapest node matching a spec in one call (backend picks when it advertises rent-by-spec, else the client picks the cheapest exact match; `dry_run=True` prices without renting). Returns `RentResult` with `.pod`, `.executor`, `.price_per_hour` |
 | `up(*, executor_id, name=, template_id=, volume_id=, ports=, ssh_keys=)` | Create pod on a named node |
 | `down(pod)` | Stop/delete pod |
 | `rm(pod)` | Alias for `down()` |
@@ -141,12 +141,13 @@ from lium.sdk import Lium
 
 lium = Lium()
 
-# Rent the cheapest 8xA100 that meets the spec — one call, no listing (lium.io newer than 0.0.33)
-rented = lium.rent(gpu_type="A100", gpu_count=8, min_cpus=32, name="my-pod")
-pod = lium.wait_ready(rented.pod, timeout=600)
-# On lium.io 0.0.33 or earlier there is no rent(): list, then rent by id
-#   executors = lium.ls(gpu_type="A100", gpu_count=8)
-#   pod = lium.wait_ready(lium.up(executor_id=executors[0].id, name="my-pod"), timeout=600)
+# lium.io 0.0.33 (the latest release): list, pick the cheapest 8xA100 yourself, rent it by id
+executors = lium.ls(gpu_type="A100", gpu_count=8)
+cheapest = min(executors, key=lambda e: e.price_per_hour)
+pod = lium.wait_ready(lium.up(executor_id=cheapest.id, name="my-pod"), timeout=600)
+# Coming with lium#209 (not in 0.0.33): the same in one call, no listing
+#   rented = lium.rent(gpu_type="A100", gpu_count=8, min_cpus=32, name="my-pod")
+#   pod = lium.wait_ready(rented.pod, timeout=600)
 
 # Execute
 result = lium.exec(pod, command="nvidia-smi")
