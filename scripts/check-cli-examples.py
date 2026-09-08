@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Every `lium …` command the docs show must parse against the real CLI.
 
-Extracts each command line that starts with `lium` inside fenced code blocks of the given files/directories (.md/.mdx),
-then, read-only and without renting anything, checks with the installed CLI that
+Extracts each command line that starts with `lium` (after any leading `NAME=value` assignments) inside fenced code blocks
+of the given files/directories (.md/.mdx), then, read-only and without renting anything, checks with the installed CLI that
 
   * the (nested) subcommand exists — `lium <sub…> --help` exits 0;
-  * every `--flag` on the line is an option token of that subcommand's `--help` (group flags count for `lium provider …`;
-    `--port` is not matched by `--ports`), or is parsed by it anyway — `lium <sub> --help --flag` exits 0 — which is how
+  * every `--flag` and one-letter `-x` on the line, up to a bare `--`, is an option token of that subcommand's `--help`
+    (group flags count for `lium provider …`; `--port` is not matched by `--ports`, `-y` not by `--yes`), or is parsed by
+    it anyway — `lium <sub> --help --flag` exits 0 — which is how
     a hidden alias such as `--json` passes. A subcommand that ignores unknown options (`lium mine` forwards them to the
     validator, so `--help` exits 0 next to any flag) gets no such credit: there only the `--help` text and the allow-list
     vouch for a flag.
@@ -66,7 +67,8 @@ for f in files:
             joined = (joined + " " + piece[:-1].strip()).strip()
             continue
         line, joined = (joined + " " + piece.strip()).strip() if joined else piece, ""
-        m = re.match(r"^\s*(?:\$\s*)?(lium\s+[a-z][a-z0-9-]*.*)$", line)
+        # leading `NAME=value` assignments are part of the line, not the command (`LIUM_API_KEY=xyz lium ls`)
+        m = re.match(r"^\s*(?:\$\s*)?(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(lium\s+[a-z][a-z0-9-]*.*)$", line)
         if m and not m.group(1).strip().startswith("lium --"):
             cmds.append((f, first, m.group(1).strip()))
 
@@ -124,6 +126,8 @@ def subcommands(sub: str) -> set[str]:
     return set(re.findall(r"^\s+([a-z][a-z0-9-]*)", m.group(1), re.M)) if rc == 0 and m else set()
 
 
+SHORT_FLAG_RX = re.compile(r"^-[A-Za-z]$")   # one-letter alias such as `-y`; `-1` and clusters like `-la` are not options of lium
+
 subs_seen, stale, allowed = set(), [], []
 for f, i, c in cmds:
     c_noq = re.sub(r"(\"[^\"]*\"|'[^']*')", "STR", c)
@@ -150,9 +154,13 @@ for f, i, c in cmds:
         else:
             stale.append((f, i, c, f"`{parts[j]}` is not a sub-command of `lium {sub}`"))
         continue
-    flags = [t.split("=")[0].strip("[]") for t in parts[j:] if t.startswith("--") and len(t) > 2]
+    opts = parts[j:]
+    if "--" in opts:
+        opts = opts[: opts.index("--")]   # after a bare `--` the tokens belong to the remote command, not to lium
+    flags = [t.split("=")[0].strip("[]") for t in opts if (t.startswith("--") and len(t) > 2) or SHORT_FLAG_RX.match(t)]
     group_help = helptext(sub.split()[0])[1] if sub.startswith("provider") else ""
-    listed = set(re.findall(r"--\w[\w-]*", h + group_help))   # whole option tokens: `--port` is not covered by `--ports`
+    # whole option tokens: `--port` is not covered by `--ports`, `-y` is not covered by `--yes` or by `non-interactive`
+    listed = set(re.findall(r"--\w[\w-]*", h + group_help)) | set(re.findall(r"(?<![\w-])-[A-Za-z](?![\w-])", h + group_help))
     missing = [fl for fl in flags if fl not in listed and not accepts(sub, fl)]
     still = [fl for fl in missing if (sub, fl) not in allow and ("*", fl) not in allow]
     if missing and not still:

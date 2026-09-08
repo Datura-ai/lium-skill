@@ -15,10 +15,13 @@ Writes one markdown file with command lines a drifted doc could contain and asse
                                                     lines are one command, reported at the first);
   * `lium provider statu --json`                    a plain word after a group that is none of its sub-commands (the CLI
                                                     answers `No such command 'statu'`; `--json` alone would pass);
+  * `lium ls -Z`                                    a one-letter alias the CLI does not have (short tokens are checked too);
+  * `LIUM_API_KEY=xyz lium ls --definitely-not-a-flag-env`  an unknown flag behind a leading env assignment (the line is
+                                                    still a `lium` command and is checked; reported without the prefix);
 
-while lines that use only flags from `lium ls --help` / `lium mine --help` / `lium up --help` (`--template_id`, `--ports`) stay
-clean (one of them backslash-continued), and an allow-listed unknown flag
-is reported as allow-listed, not stale.
+while lines that use only flags from `lium ls --help` / `lium mine --help` / `lium up --help` (`--template_id`, `--ports`,
+`-c`, `-y`) stay clean (one of them backslash-continued), tokens after a bare `--` are left to the remote command
+(`lium exec my-pod -- nvidia-smi -q`), and an allow-listed unknown flag is reported as allow-listed, not stale.
 
 usage: test_check_cli_examples.py [--lium PATH]      exit 0 when every verdict matches, 1 otherwise, 2 when the CLI is missing
 """
@@ -60,17 +63,22 @@ STALE = {
     "lium up --port 5": "flag(s) --port not in `lium up --help`",
     "lium ls --definitely-not-a-flag --format json": "flag(s) --definitely-not-a-flag not in `lium ls --help`",   # continued
     "lium provider statu --json": "`statu` is not a sub-command of `lium provider`",
+    "lium ls -Z": "flag(s) -Z not in `lium ls --help`",
+    "lium ls --definitely-not-a-flag-env": "flag(s) --definitely-not-a-flag-env not in `lium ls --help`",   # env-prefixed
 }
 CLEAN = [
     "lium ls --format json",
     "lium mine -k hotkey --auto",   # written as two backslash-continued lines
     "lium mine --verbose",
     "lium up 1 --template_id abc --ports 8080",
+    "lium up --gpu H100 -c 2 -y",
+    "lium exec my-pod -- nvidia-smi -q",
 ]
 ALLOWED = ["lium mine --allow-listed-flag"]
-# what the planted markdown holds: each command on one line, except the two continued ones
+# what the planted markdown holds: each command on one line, except the two continued ones and the env-prefixed one
 DOC_LINES = [
-    *[c for c in STALE if not c.startswith("lium ls --definitely-not-a-flag --format")],
+    *[c for c in STALE if not c.startswith(("lium ls --definitely-not-a-flag --format", "lium ls --definitely-not-a-flag-env"))],
+    "LIUM_API_KEY=xyz lium ls --definitely-not-a-flag-env",
     "lium ls \\",
     "  --definitely-not-a-flag \\",
     "  --format json",
@@ -79,6 +87,8 @@ DOC_LINES = [
     "  --auto",
     "lium mine --verbose",
     "lium up 1 --template_id abc --ports 8080",
+    "lium up --gpu H100 -c 2 -y",
+    "lium exec my-pod -- nvidia-smi -q",
     *ALLOWED,
 ]
 
