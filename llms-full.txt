@@ -8,7 +8,7 @@ Source of truth: https://github.com/Datura-ai/lium-skill
 
 # Lium CLI & SDK
 
-Lium — decentralized GPU rental platform on Bittensor. Pods are Docker containers with root SSH access and direct GPU passthrough.
+Lium — agent-first compute: a decentralized GPU rental platform on Bittensor. Pods are Docker containers with root SSH access and direct GPU passthrough.
 
 - **GitHub**: https://github.com/Datura-ai/lium
 - **PyPI**: https://pypi.org/project/lium.io/

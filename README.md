@@ -1,7 +1,7 @@
 # lium-skill
 
 The `lium` agent skill — teaches an AI coding agent to rent GPUs and manage pods
-on [Lium](https://lium.io), a decentralized GPU rental platform on Bittensor.
+on [Lium](https://lium.io), agent-first compute: a decentralized GPU rental platform on Bittensor.
 
 ## Install
 
