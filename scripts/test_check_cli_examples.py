@@ -11,13 +11,13 @@ Writes one markdown file with command lines a drifted doc could contain and asse
   * `lium definitely-not-a-subcommand`              a subcommand the CLI does not have;
   * `lium up --port 5`                              a flag that is only a prefix of a real one (`--ports` is in
                                                     `lium up --help`; whole option tokens are compared, not substrings);
-  * `lium ls \` + `  --definitely-not-a-flag`       the same unknown flag on a backslash-continued line (the two physical
-                                                    lines are one command, reported at the first);
+  * `lium ls \` + `  --definitely-not-a-flag \` + `  --format json`   the same unknown flag on a backslash-continued
+                                                    line (the three physical lines are one command, reported at the first);
   * `lium provider statu --json`                    a plain word after a group that is none of its sub-commands (the CLI
                                                     answers `No such command 'statu'`; `--json` alone would pass);
   * `lium ls -Z`                                    a one-letter alias the CLI does not have (short tokens are checked too);
-  * `LIUM_API_KEY=xyz lium ls --definitely-not-a-flag-env`  an unknown flag behind a leading env assignment (the line is
-                                                    still a `lium` command and is checked; reported without the prefix);
+  * `LIUM_API_KEY=xyz lium ls --definitely-not-a-flag-env`  a flag the CLI does not have, behind a leading env assignment
+                                                    (the line is still a `lium` command; reported without the prefix);
 
 while lines that use only flags from `lium ls --help` / `lium mine --help` / `lium up --help` (`--template_id`, `--ports`,
 `-c`, `-y`) stay clean (one of them backslash-continued), tokens after a bare `--` are left to the remote command
