@@ -639,6 +639,34 @@ lium exec work-pod "python /root/code.py"
 lium rm work-pod -y
 ```
 
+## Run One Python Function on a GPU (no pod scripting)
+
+When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the pickled result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` from the moment it is rented.
+
+```python
+import lium
+
+@lium.machine(machine="RTX4090", requirements=["transformers", "accelerate"], timeout=600, keep_warm=300)
+def generate(prompt: str) -> str:
+    import torch                                  # import INSIDE the function; only its def travels
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    tok = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
+    model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct", dtype=torch.bfloat16, device_map="cuda")
+    ids = tok.apply_chat_template([{"role": "user", "content": prompt}], return_tensors="pt", add_generation_prompt=True).to("cuda")
+    out = model.generate(ids, max_new_tokens=64, do_sample=False, pad_token_id=tok.eos_token_id)
+    return tok.decode(out[0][ids.shape[-1]:], skip_special_tokens=True).strip()
+
+try:
+    print(generate("Who discovered penicillin?"))    # cold: ~1-2 min (rent, boot, install); warm: ~20 s
+    print(generate("Name one antibiotic."))          # reuses the warm pod
+except Exception as e:                                # the remote exception type; e.__cause__ is lium.RemoteExecutionError
+    print(type(e).__name__, e, e.__cause__.remote_traceback)
+finally:
+    generate.close()                                  # remove the warm pod now (else: keep_warm + 2 min later)
+```
+
+Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH200"`, `"RTX4090"`; count defaults to 1 — `"A100"` is one A100, not eight). Import inside the function; a module-level import/constant/helper used inside is refused at definition time (it would be a `NameError` on the pod). Return plain Python types (`str()`, `.tolist()`, `.cpu().numpy()`), not tensors or `torch.__version__`. Torch is already on the default template — do not put it in `requirements`. `f.map(items)` runs a batch on one pod; `f.local(x)` or `LIUM_MACHINE_LOCAL=1` runs the function locally for tests; `quiet=True` drops the `[lium]` progress lines (the function's own prints still stream). Requires the `lium` release after 0.0.33; on 0.0.33 the decorator picks the first node whose name contains the string and results must be JSON-serialisable.
+
 ## Detailed References
 
 - **Full CLI command reference**: [references/cli-commands.md](references/cli-commands.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md) — all commands, flags, volumes, backups, scheduling, port-forward, etc.

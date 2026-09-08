@@ -169,28 +169,54 @@ lium.down(pod)
 
 ## @machine Decorator
 
-Simplest way to run code on a remote GPU. Automatically provisions, uploads, executes, returns result, and cleans up.
+Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the pickled result or re-raises the remote exception, removes the pod or keeps it warm.
 
 ```python
-from lium.sdk import machine
+import lium
 
-@machine(machine="A100", requirements=["torch", "transformers"])
-def train_model(prompt: str) -> str:
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
-    # ... your code runs on remote A100
-    return result
+@lium.machine(machine="1xH200", requirements=["transformers", "accelerate"], timeout=900, keep_warm=300)
+def run(model_name: str, prompt: str) -> str:
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    tok = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.bfloat16, device_map="cuda")
+    ids = tok(prompt, return_tensors="pt").to("cuda")
+    return tok.decode(model.generate(**ids, max_new_tokens=64)[0], skip_special_tokens=True)
 
-result = train_model("Your prompt")
+answer = run("Qwen/Qwen2.5-0.5B-Instruct", "What is the capital of France?")
+run.close()          # remove the warm pod now
 ```
 
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `machine` | str | GPU type: `"A100"`, `"1xH200"`, `"2xA100"` |
-| `template_id` | str, optional | Docker template to use |
-| `cleanup` | bool, default True | Delete pod after execution |
-| `requirements` | list, optional | Pip packages to install before running |
+| `machine` | str | `"<count>x<gpu>"` or `"<gpu>"`: `"1xH200"`, `"RTX4090"`, `"2xA100"`. Count defaults to 1. Cheapest matching node is rented. |
+| `requirements` | list, optional | pip packages, installed once per pod into a venv that also sees the image's packages |
+| `template_id` | str, optional | Docker template to rent with (default: the node's default template) |
+| `timeout` | float, default 3600 | seconds the function may run; `None` = unlimited. Pod removal is scheduled at `timeout + 15 min` |
+| `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
+| `cleanup` | bool, default True | `False` keeps the pod indefinitely |
+| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function) |
+| `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
+
+**On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
+
+**What travels:** only the function's own `def` (decorators/annotations stripped) plus pickled arguments; the result comes back pickled. Import inside the body; a closure variable or a module-level name used inside is refused when the function is decorated (`LiumError` naming it). Methods, nested functions and `async def` work; lambdas do not. Return plain Python types — a tensor or `torch.__version__` would need torch installed on the caller to unpickle.
+
+**Errors:** the remote exception is re-raised with its own type; `e.__cause__` is `lium.RemoteExecutionError` with `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`. Timeout → `RemoteExecutionError: <fn> exceeded timeout=Ns and was killed`. Prints from the pod appear on the caller's terminal while the function runs.
+
+**Progress lines (stderr):**
+```
+[lium] run: renting 1xH200 $2.75/h (swift-fox-c8, United States), removal in 1.5h
+[lium] run: pod ready in 45s
+[lium] run: preparing environment (2 package(s): transformers, accelerate)
+[lium] run: environment ready in 31s
+[lium] run: running
+[lium] run: done in 118s (~$0.0901)
+[lium] run: pod stays warm 300s
+```
+
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires the `lium` release after 0.0.33.
 
 ---
 
