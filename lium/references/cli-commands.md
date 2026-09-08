@@ -339,7 +339,7 @@ lium exec [OPTIONS] TARGETS [COMMAND]
   COMMAND            Command to execute (quote multi-word commands)
   -s, --script TEXT  Execute a local script file on the pod
   -e, --env TEXT     Set environment variables (KEY=VALUE)
-  --json             Print machine-readable JSON (stdout, stderr, exit_code)
+  --json             Print machine-readable JSON ({"ok", "results": [...]})
 ```
 
 Examples:
@@ -354,19 +354,33 @@ lium exec 1 -e API_KEY=xyz "python app.py"
 lium exec 1 --json "python train.py"
 ```
 
-There is no `--timeout`, no `--detach` and no `--output` in 0.0.33; redirect the
-output in the shell (`lium exec 1 "nvidia-smi" > gpu.txt`). `exec` waits for the
-remote command **and every child that still holds its stdout/stderr**, so a job
-started with a bare `&` keeps `exec` blocked. Detach it fully:
+There is no `--timeout`, no `--detach` and no `--output` in 0.0.33. `exec` waits
+for the remote command **and every child that still holds its stdout/stderr**, so
+a job started with a bare `&` keeps `exec` blocked. Detach it fully:
 
 ```bash
 lium exec my-pod "mkdir -p /workspace/logs && nohup setsid bash -lc 'python train.py' > /workspace/logs/train.log 2>&1 < /dev/null & echo PID=\$!"
 ```
 
-`--json` prints `{"stdout": ..., "stderr": ..., "exit_code": ...}` on stdout; on a
-failure before the command ran (no such pod, bad script) it prints
-`{"ok": false, "error": {"code": ..., "message": ...}}` on **stderr** and exits
-non-zero.
+**Local stdin is not forwarded** — the remote command's stdin is closed at once,
+so `lium exec my-pod "bash -s" < setup.sh` runs nothing. Use `--script setup.sh`
+instead: the file's text is sent as the command (multi-line scripts are fine), and
+its exit code comes back.
+
+**Capturing output**: the human format prints an `Executing on <huid>` line on
+stdout before the remote stdout, so `lium exec pod "echo \$!" > pid.txt` captures
+both. Use `--json` and pick the field:
+
+```bash
+lium exec my-pod --json "nvidia-smi -L | wc -l" | jq -r '.results[0].stdout'
+```
+
+`--json` prints one object on stdout:
+`{"ok": <all succeeded>, "results": [{"pod": "<huid>", "stdout": "...", "stderr": "...", "exit_code": N, "error": null}]}`
+(one entry per target). On a failure before the command ran (no such pod, bad
+script) it prints `{"ok": false, "error": {"code": ..., "message": ...}}` on
+**stderr** and exits non-zero. The process exit code is the highest remote exit
+code across targets.
 
 ## lium scp
 
