@@ -11,8 +11,13 @@ Writes one markdown file with command lines a drifted doc could contain and asse
   * `lium definitely-not-a-subcommand`              a subcommand the CLI does not have;
   * `lium up --port 5`                              a flag that is only a prefix of a real one (`--ports` is in
                                                     `lium up --help`; whole option tokens are compared, not substrings);
+  * `lium ls \` + `  --definitely-not-a-flag`       the same unknown flag on a backslash-continued line (the two physical
+                                                    lines are one command, reported at the first);
+  * `lium provider statu --json`                    a plain word after a group that is none of its sub-commands (the CLI
+                                                    answers `No such command 'statu'`; `--json` alone would pass);
 
-while lines that use only flags from `lium ls --help` / `lium mine --help` / `lium up --help` (`--template_id`, `--ports`) stay clean, and an allow-listed unknown flag
+while lines that use only flags from `lium ls --help` / `lium mine --help` / `lium up --help` (`--template_id`, `--ports`) stay
+clean (one of them backslash-continued), and an allow-listed unknown flag
 is reported as allow-listed, not stale.
 
 usage: test_check_cli_examples.py [--lium PATH]      exit 0 when every verdict matches, 1 otherwise, 2 when the CLI is missing
@@ -53,19 +58,34 @@ STALE = {
     "lium mine -k hotkey --definitely-not-a-flag=5": "flag(s) --definitely-not-a-flag not in `lium mine --help`",
     "lium definitely-not-a-subcommand --help": "subcommand `lium definitely-not-a-subcommand` not found",
     "lium up --port 5": "flag(s) --port not in `lium up --help`",
+    "lium ls --definitely-not-a-flag --format json": "flag(s) --definitely-not-a-flag not in `lium ls --help`",   # continued
+    "lium provider statu --json": "`statu` is not a sub-command of `lium provider`",
 }
 CLEAN = [
     "lium ls --format json",
-    "lium mine -k hotkey --auto",
+    "lium mine -k hotkey --auto",   # written as two backslash-continued lines
     "lium mine --verbose",
     "lium up 1 --template_id abc --ports 8080",
 ]
 ALLOWED = ["lium mine --allow-listed-flag"]
+# what the planted markdown holds: each command on one line, except the two continued ones
+DOC_LINES = [
+    *[c for c in STALE if not c.startswith("lium ls --definitely-not-a-flag --format")],
+    "lium ls \\",
+    "  --definitely-not-a-flag \\",
+    "  --format json",
+    "lium ls --format json",
+    "lium mine -k hotkey \\",
+    "  --auto",
+    "lium mine --verbose",
+    "lium up 1 --template_id abc --ports 8080",
+    *ALLOWED,
+]
 
 with tempfile.TemporaryDirectory() as tmp:
     doc = os.path.join(tmp, "planted.md")
     with open(doc, "w") as fh:
-        fh.write("# planted\n\n```bash\n" + "\n".join([*STALE, *CLEAN, *ALLOWED]) + "\n```\n")
+        fh.write("# planted\n\n```bash\n" + "\n".join(DOC_LINES) + "\n```\n")
     allow = os.path.join(tmp, "allow.txt")
     with open(allow, "w") as fh:
         fh.write("mine|--allow-listed-flag|test_check_cli_examples.py\n")

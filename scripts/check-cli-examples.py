@@ -11,8 +11,10 @@ then, read-only and without renting anything, checks with the installed CLI that
     validator, so `--help` exits 0 next to any flag) gets no such credit: there only the `--help` text and the allow-list
     vouch for a flag.
 
-Lines whose subcommand is a placeholder (`lium <command>`), chained commands past the first `&&`/`|`, and flags inside
-quoted remote commands are ignored. Known-upcoming flags live in an allow-list file (one `subcommand|--flag|why` per
+A backslash-continued command is joined and checked as one line, reported at its first line. A plain word after a group
+that is none of its sub-commands (`lium provider statu --json`) is stale, not a positional argument. Lines whose
+subcommand is a placeholder (`lium <command>`), chained commands past the first `&&`/`|`, and flags inside quoted
+remote commands are ignored. Known-upcoming flags live in an allow-list file (one `subcommand|--flag|why` per
 line; `*` as the subcommand matches any subcommand, `*` as the flag allows a subcommand the released CLI does not have
 yet, flags included) so a doc may describe what ships in a pending release — each entry names the PR or ticket that
 removes it.
@@ -50,16 +52,23 @@ if args.allow and os.path.exists(args.allow):
 
 cmds = []  # (file, line, command)
 for f in files:
-    infence = False
+    infence, joined, first = False, "", 0
     for i, ln in enumerate(open(f, errors="replace"), 1):
         if ln.strip().startswith("```"):
-            infence = not infence
+            infence, joined = not infence, ""
             continue
-        m = re.match(r"^\s*(?:\$\s*)?(lium\s+[a-z][a-z0-9-]*.*)$", ln) if infence else None
-        if m:
-            c = re.sub(r"\s+#.*$", "", m.group(1)).strip()
-            if not c.startswith("lium --"):
-                cmds.append((f, i, c))
+        if not infence:
+            continue
+        piece = re.sub(r"\s+#.*$", "", ln.rstrip("\n")).rstrip()
+        if not joined:
+            first = i
+        if piece.endswith("\\"):   # a backslash-continued command is one command, reported at its first line
+            joined = (joined + " " + piece[:-1].strip()).strip()
+            continue
+        line, joined = (joined + " " + piece.strip()).strip() if joined else piece, ""
+        m = re.match(r"^\s*(?:\$\s*)?(lium\s+[a-z][a-z0-9-]*.*)$", line)
+        if m and not m.group(1).strip().startswith("lium --"):
+            cmds.append((f, first, m.group(1).strip()))
 
 def run_lium(*argv: str) -> tuple[int, str]:
     """`lium <argv…>`, read-only, 60 s, plain output; (127, the error) when the binary is missing or hangs, so every
@@ -133,6 +142,13 @@ for f, i, c in cmds:
             allowed.append((f, i, c, [f"`lium {sub}`"]))
         else:
             stale.append((f, i, c, f"subcommand `lium {sub}` not found (exit {rc})"))
+        continue
+    if j < len(parts) and subcommands(sub) and re.match(r"^[a-z][a-z0-9-]*$", parts[j]):
+        # a plain word after a group is a sub-command the CLI does not have (`lium provider statu`), not a positional
+        if (f"{sub} {parts[j]}", "*") in allow:
+            allowed.append((f, i, c, [f"`lium {sub} {parts[j]}`"]))
+        else:
+            stale.append((f, i, c, f"`{parts[j]}` is not a sub-command of `lium {sub}`"))
         continue
     flags = [t.split("=")[0].strip("[]") for t in parts[j:] if t.startswith("--") and len(t) > 2]
     group_help = helptext(sub.split()[0])[1] if sub.startswith("provider") else ""
