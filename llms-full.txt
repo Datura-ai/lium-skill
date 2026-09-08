@@ -1563,7 +1563,7 @@ run.close()          # remove the warm pod now
 | `timeout` | float, default 3600 | seconds the function may run; `None` = unlimited. Pod removal is scheduled at `timeout + 15 min` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
 | `cleanup` | bool, default True | `False` keeps the pod indefinitely |
-| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function) |
+| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; release after 0.0.33) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
 **On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
