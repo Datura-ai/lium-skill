@@ -321,7 +321,7 @@ After completing the two-step auth, run `lium ls` to verify. If it returns resul
 #### Exit Codes Hold Since 0.0.31 — Still Read the Output
 
 Since lium **0.0.31** every command exits non-zero when it fails (table in
-`references/cli-commands.md` § Exit Codes): `lium ls` with a revoked key exits `3`,
+`references/cli-commands.md` § Exit Codes): `lium ps` with a revoked key exits `3`,
 a 403 exits `6`, and `lium ssh no-such-pod-xyz` exits `5`:
 
 ```bash
@@ -368,9 +368,11 @@ lium CLI has no renter-side identity command — no `whoami` for your API key.
 (`lium provider portal whoami` exists, but it reports the *provider* portal session,
 not the API key you rent with.)
 
-To check the key, run `lium balance`: it prints a balance when the key works and an
-error when it does not. Do **not** use `lium ls` for this — it prints an error and
-exits 0 on an auth failure, so `lium ls && echo OK` says OK with a revoked key.
+To check the key, run `lium balance`: it prints a balance when the key works and,
+since 0.0.31, exits `3` with an error when the key is bad or revoked. Do **not** use
+`lium ls` for this: the node list is public, so it succeeds (exit `0`) with any key.
+Releases before 0.0.31 exited `0` on most failures — pin `lium>=0.0.31` when a script
+branches on `$?`.
 
 #### Long-Running Commands Over SSH
 
@@ -557,7 +559,7 @@ lium init --no-browser
 # → wait for user to confirm they approved
 lium init --session <SESSION_ID>
 
-# 3. Verify (lium ls exits 0 even on an auth failure — check balance instead)
+# 3. Verify the key (lium ls lists public data and succeeds with any key; a bad key exits 3 here since 0.0.31)
 lium balance --json
 # A zero balance means signup credit did not land; fund the account before renting.
 

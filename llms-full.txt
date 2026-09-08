@@ -323,7 +323,7 @@ After completing the two-step auth, run `lium ls` to verify. If it returns resul
 #### Exit Codes Hold Since 0.0.31 — Still Read the Output
 
 Since lium **0.0.31** every command exits non-zero when it fails (table in
-`references/cli-commands.md` § Exit Codes): `lium ls` with a revoked key exits `3`,
+`references/cli-commands.md` § Exit Codes): `lium ps` with a revoked key exits `3`,
 a 403 exits `6`, and `lium ssh no-such-pod-xyz` exits `5`:
 
 ```bash
@@ -370,9 +370,11 @@ lium CLI has no renter-side identity command — no `whoami` for your API key.
 (`lium provider portal whoami` exists, but it reports the *provider* portal session,
 not the API key you rent with.)
 
-To check the key, run `lium balance`: it prints a balance when the key works and an
-error when it does not. Do **not** use `lium ls` for this — it prints an error and
-exits 0 on an auth failure, so `lium ls && echo OK` says OK with a revoked key.
+To check the key, run `lium balance`: it prints a balance when the key works and,
+since 0.0.31, exits `3` with an error when the key is bad or revoked. Do **not** use
+`lium ls` for this: the node list is public, so it succeeds (exit `0`) with any key.
+Releases before 0.0.31 exited `0` on most failures — pin `lium>=0.0.31` when a script
+branches on `$?`.
 
 #### Long-Running Commands Over SSH
 
@@ -559,7 +561,7 @@ lium init --no-browser
 # → wait for user to confirm they approved
 lium init --session <SESSION_ID>
 
-# 3. Verify (lium ls exits 0 even on an auth failure — check balance instead)
+# 3. Verify the key (lium ls lists public data and succeeds with any key; a bad key exits 3 here since 0.0.31)
 lium balance --json
 # A zero balance means signup credit did not land; fund the account before renting.
 
@@ -1278,7 +1280,8 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 
 Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
 (`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
-`lium ls` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
+`lium ps` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
+`lium ls` reads the public node list and succeeds with any key, so it is not a key check.
 Inside a batch the rule changes: `rm`, `reboot`, `scp`, `rsync` (and `volumes rm`,
 `schedules rm`) finish the batch and exit `1` naming the items that failed, whatever
 the API answered for them (`Failed to remove pods: brave-orbit-b9`); only their

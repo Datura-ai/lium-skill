@@ -691,7 +691,8 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 
 Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
 (`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
-`lium ls` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
+`lium ps` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
+`lium ls` reads the public node list and succeeds with any key, so it is not a key check.
 Inside a batch the rule changes: `rm`, `reboot`, `scp`, `rsync` (and `volumes rm`,
 `schedules rm`) finish the batch and exit `1` naming the items that failed, whatever
 the API answered for them (`Failed to remove pods: brave-orbit-b9`); only their
