@@ -584,7 +584,9 @@ lium rm work-pod -y
 
 Written against `lium --version` **0.0.29**. Every flag below appears in that
 binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
-`lium <command> --help` is the authority, not this file.
+`lium <command> --help` is the authority, not this file. The one exception is
+marked inline: an option or command tagged **(lium#NNN, not released)** is read
+off that open lium PR's `--help` and is not in the released binary yet.
 
 ## Table of Contents
 
@@ -849,12 +851,13 @@ lium audit [OPTIONS]                 # lium#160, not released
 ```
 
 The table — When (UTC) / Pod / What / By — reads oldest first. `By` is `key <name> (<id8>)`,
-`session` (browser) or `platform`. Exit `5` when `--pod` names no listed pod.
+`session` (browser) or `platform`. Exit `5` when `--pod` is neither a listed pod nor a full UUID
+(a full id passes through so a deleted pod can be queried).
 
 ```bash
-lium audit --since 24h                                              # what happened today
-lium audit --pod my-pod                                             # one pod's history
-lium audit --json | jq '.[] | select(.actor.api_key_name == "ci")'  # everything one key did
+lium audit --since 24h                                              # today — lium#160, not released
+lium audit --pod my-pod                                             # one pod's history — lium#160, not released
+lium audit --json | jq '.[] | select(.actor.api_key_name == "ci")'  # one key's actions — lium#160, not released
 ```
 
 ## lium ssh
@@ -1227,7 +1230,7 @@ form accepts is **not** uniform:
 | Form | Example | Accepted by |
 |------|---------|-------------|
 | Name / HUID / UUID | `lium ssh eager-wolf-aa` | every command |
-| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *` — **not** `ps` and **not** `logs` |
+| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *`, `audit --pod` (lium#160, not released) — **not** `ps` and **not** `logs` |
 | Comma list | `lium exec 1,2,3 "cmd"` | `TARGETS` commands only |
 | All | `lium exec all "cmd"` | `TARGETS` commands only |
 
@@ -1264,6 +1267,7 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | 1 | General error |
 | 2 | Configuration error (bad arguments, unreadable script, missing config) |
 | 4 | SSH error |
+| 3 | API error — the API refused the key (401); today only `lium audit` maps it *(lium#160, not released)* |
 | 5 | Pod not found |
 
 ⚠️ **The exit code alone is not proof of success.** Only three commands are
@@ -1282,7 +1286,7 @@ sub-commands. So `lium ls >/dev/null && echo OK` prints `OK` with a revoked API
 key. Read the output, or use `--format json` / `--json` where it exists, instead
 of branching on `$?` alone. Tracked as **DAH-2593**.
 
-Codes 3 and 6 exist in the source but no command produces them today.
+Code 6 exists in the source but no command produces it today; code 3 is produced only by `lium audit` (lium#160, not released) — no released command exits 3.
 
 ---
 
