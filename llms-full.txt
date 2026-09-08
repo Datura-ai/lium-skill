@@ -1265,28 +1265,26 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 |------|---------|
 | 0 | Success |
 | 1 | General error |
-| 2 | Configuration error (bad arguments, unreadable script, missing config) |
+| 2 | Configuration error (bad arguments, unreadable script, missing config, no API key) |
+| 3 | API error — the API refused or failed the call: 401 (bad or revoked key), 404, 429, 5xx |
 | 4 | SSH error |
-| 3 | API error — the API refused the key (401); today only `lium audit` maps it *(lium#160, not released)* |
 | 5 | Pod not found |
+| 6 | Permission denied — the API answered 403 (an unverified account, for one) |
 
-⚠️ **The exit code alone is not proof of success.** Only three commands are
-reliable:
+Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
+(`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
+`lium ls` with a revoked key exits `3`, with an unverified account `6`. The one
+exception is `lium provider …`, which keeps its own map (`1` arguments, `2` auth,
+`3` portal, `5` ssh, `6` config missing, `7` token-cache contention). `lium exec`
+exits with the remote command's code (`5` when no pod matched, `2` on a bad
+argument or unreadable script). Under `--json` (`exec`, `describe`, `balance`,
+`fund`, `topup`, `signup`) a failure is one JSON object on stderr,
+`{"ok": false, "error": {"code": ..., "message": ...}}`, and stdout stays empty;
+`--format json` (`ls`, `ps`) reports a failure as text.
 
-- `lium exec` — exits with the remote command's code, `5` when no pod matched,
-  `2` on a bad argument or unreadable script;
-- `lium rm` — `5` when nothing matched `TARGETS`;
-- `lium up` — `1` when node selection, renting or readiness fails, `2` on a bad
-  argument, `4` when SSH is unavailable.
-
-**Everything else can print `Error: ...` and still exit 0** — including
-`lium ls`, whose API and authentication failures are swallowed the same way as in
-`ssh`, `logs`, `reboot`, `scp`, `rsync`, `port-forward`, `update` and the `bk`
-sub-commands. So `lium ls >/dev/null && echo OK` prints `OK` with a revoked API
-key. Read the output, or use `--format json` / `--json` where it exists, instead
-of branching on `$?` alone. Tracked as **DAH-2593**.
-
-Code 6 exists in the source but no command produces it today; code 3 is produced only by `lium audit` (lium#160, not released) — no released command exits 3.
+`lium audit` *(lium#160, not released)* adds nothing to the table: its 401 is
+exit `3` like every other command's, with the hint that if the key works for
+`lium ps` the backend does not yet open `/users/me/events` to API keys.
 
 ---
 
