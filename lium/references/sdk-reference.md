@@ -169,7 +169,7 @@ lium.down(pod)
 
 ## @machine Decorator
 
-Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the pickled result or re-raises the remote exception, removes the pod or keeps it warm.
+Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the result or re-raises the remote exception, removes the pod or keeps it warm.
 
 ```python
 import lium
@@ -201,7 +201,7 @@ run.close()          # remove the warm pod now
 
 **On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
 
-**What travels:** only the function's own `def` (decorators/annotations stripped) plus pickled arguments; the result comes back pickled. Import inside the body; a closure variable or a module-level name used inside is refused when the function is decorated (`LiumError` naming it). Methods, nested functions and `async def` work; lambdas do not. Return plain Python types — a tensor or `torch.__version__` would need torch installed on the caller to unpickle.
+**What travels:** only the function's own `def` (decorators/annotations stripped) plus pickled arguments (your bytes, loaded on your pod). The result is not pickled: it comes back as a JSON envelope plus an `.npz` sidecar for numpy arrays, read with `allow_pickle=False`. What round-trips, each as its own type: `None`, `bool`, `int`, `float`, `str`, `bytes`; `list`, `tuple`, `set`, `frozenset`, `dict` of those, nested; `datetime`/`date`/`time`/`timedelta`, `Decimal`, `pathlib.Path`, `uuid.UUID`; `numpy.ndarray` (any dtype without Python objects) and numpy scalars. Anything else — a tensor, `torch.__version__`, a dataclass, an `Enum` — is a `lium.ResultEncodingError` raised on the pod naming the type; return `str(...)`, `.tolist()`, `.cpu().numpy()`, `dict(x)` instead. Import inside the body; a closure variable or a module-level name used inside is refused when the function is decorated (`LiumError` naming it). Methods, nested functions and `async def` work; lambdas do not.
 
 **Errors:** the remote exception is re-raised with its own type; `e.__cause__` is `lium.RemoteExecutionError` with `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`. Timeout → `RemoteExecutionError: <fn> exceeded timeout=Ns and was killed`. Prints from the pod appear on the caller's terminal while the function runs.
 
