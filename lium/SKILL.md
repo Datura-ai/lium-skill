@@ -294,7 +294,7 @@ lium up --gpu A6000 --image pytorch/pytorch:2.0 -y    # custom docker image (str
 lium up --gpu H100 --jupyter -y --no-ssh              # with Jupyter
 ```
 
-Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK) has the backend pick the **cheapest node matching the spec and rent it in one call** — do not `lium ls` / `ls()` first and rent the first row, which is neither the cheapest nor guaranteed still free.
+Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK, lium.io newer than 0.0.33) **picks a matching node and rents it in one call**. The backend picks the cheapest once rent-by-spec is deployed; older clients pick locally (0.0.33 takes the first Pareto-optimal row of `ls()`, not the cheapest). Either way, do not `lium ls` / `ls()` first and rent the first row yourself: it is neither the cheapest nor guaranteed still free.
 
 ### Non-Interactive Funding
 
