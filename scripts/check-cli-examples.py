@@ -5,7 +5,8 @@ Extracts each command line that starts with `lium` inside fenced code blocks of 
 then, read-only and without renting anything, checks with the installed CLI that
 
   * the (nested) subcommand exists — `lium <sub…> --help` exits 0;
-  * every `--flag` on the line is listed in that subcommand's `--help` (group flags count for `lium provider …`).
+  * every `--flag` on the line is listed in that subcommand's `--help` (group flags count for `lium provider …`), or
+    is parsed by it anyway — `lium <sub> --help --flag` exits 0 — which is how a hidden alias such as `--json` passes.
 
 Lines whose subcommand is a placeholder (`lium <command>`), chained commands past the first `&&`/`|`, and flags inside
 quoted remote commands are ignored. Known-upcoming flags live in an allow-list file (one `subcommand|--flag|why` per
@@ -71,6 +72,30 @@ def helptext(sub: str) -> tuple[int, str]:
     return help_cache[sub]
 
 
+accept_cache: dict[tuple[str, str], bool] = {}
+
+
+def accepts(sub: str, flag: str) -> bool:
+    """True when the CLI parses `flag` for `sub` although `--help` does not list it (a Click `hidden=True` option,
+    e.g. the `--json` alias of `--format json`). `lium <sub> --help <flag>` exits 0 when the parser knows the flag
+    (`--help` is eager, so it prints and exits before any value is used) and 2 on `No such option`; the `=x` form
+    covers a hidden option that takes a value."""
+    key = (sub, flag)
+    if key not in accept_cache:
+        ok = False
+        for probe in (flag, f"{flag}=x"):
+            try:
+                p = subprocess.run([args.lium, *sub.split(), "--help", probe], capture_output=True, text=True, timeout=60,
+                                   env={**os.environ, "NO_COLOR": "1", "TERM": "dumb", "HOME": os.environ.get("CHECK_HOME", os.environ.get("HOME", "/tmp"))})
+            except (OSError, subprocess.TimeoutExpired):
+                break
+            if p.returncode == 0:
+                ok = True
+                break
+        accept_cache[key] = ok
+    return accept_cache[key]
+
+
 def subcommands(sub: str) -> set[str]:
     rc, h = helptext(sub)
     m = re.search(r"Commands:\n((?:\s+\S.*\n?)+)", h)
@@ -98,7 +123,7 @@ for f, i, c in cmds:
         continue
     flags = [t.split("=")[0].strip("[]") for t in parts[j:] if t.startswith("--") and len(t) > 2]
     group_help = helptext(sub.split()[0])[1] if sub.startswith("provider") else ""
-    missing = [fl for fl in flags if fl not in h and fl not in group_help]
+    missing = [fl for fl in flags if fl not in h and fl not in group_help and not accepts(sub, fl)]
     still = [fl for fl in missing if (sub, fl) not in allow and ("*", fl) not in allow]
     if missing and not still:
         allowed.append((f, i, c, missing))

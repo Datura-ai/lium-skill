@@ -6,7 +6,8 @@
 #      and what it installed is byte-identical to the repo;
 #   3. the first command the skill tells an agent to run, `lium ls --format json`, answers from the public feed with
 #      the fields the skill names (the feed is public by design; the CLI only needs some key string set).
-# Needs: python3, the `lium` CLI on PATH (CI: `uv tool install lium.io`), network. Exit 0 only when all three pass.
+# Needs: python3, the `lium` CLI on PATH (CI: `uv tool install lium.io`), network; step 3 uses GNU `timeout` when
+# present (coreutils; `gtimeout` from Homebrew on a Mac) and runs unbounded without it. Exit 0 only when all three pass.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 FAILED=""
@@ -19,10 +20,11 @@ check_commands() {
 install_sh() {
   local home port pid
   home=$(mktemp -d); port=$(( 20000 + RANDOM % 20000 ))
-  ( cd . && python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1 ) & pid=$!
+  # started directly so $! is the server (a subshell wrapper leaves the python process alive after `kill $pid` on bash 3.2)
+  python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1 & pid=$!
   sleep 1
-  HOME="$home" LIUM_SKILL_RAW_BASE="http://127.0.0.1:$port" bash agents/install.sh --force >/dev/null || { kill $pid; return 1; }
-  kill $pid
+  HOME="$home" LIUM_SKILL_RAW_BASE="http://127.0.0.1:$port" bash agents/install.sh --force >/dev/null || { kill $pid; wait $pid 2>/dev/null; return 1; }
+  kill $pid; wait $pid 2>/dev/null
   local rc=0
   for d in .claude .cursor .codex; do
     if ! diff -rq lium "$home/$d/skills/lium" >/dev/null; then echo "installed copy in ~/$d/skills/lium differs from lium/"; diff -rq lium "$home/$d/skills/lium" | head; rc=1; fi
@@ -32,10 +34,11 @@ install_sh() {
 }
 
 ls_json() {
-  local home out
+  local home out t
   home=$(mktemp -d)
+  t=$(command -v timeout || command -v gtimeout || true)   # GNU coreutils; stock macOS has neither
   # the executor feed is public by design (the CLI still wants *a* key configured; any string does for `ls`)
-  out=$(HOME="$home" LIUM_API_KEY="${LIUM_API_KEY:-lium_skill_e2e_no_real_key}" LIUM_BASE_URL="${LIUM_BASE_URL:-https://lium.io/api}" timeout 120 lium ls --format json 2>/dev/null) || { echo "lium ls --format json failed"; rm -rf "$home"; return 1; }
+  out=$(HOME="$home" LIUM_API_KEY="${LIUM_API_KEY:-lium_skill_e2e_no_real_key}" LIUM_BASE_URL="${LIUM_BASE_URL:-https://lium.io/api}" ${t:+"$t" 120} lium ls --format json 2>/dev/null) || { echo "lium ls --format json failed"; rm -rf "$home"; return 1; }
   rm -rf "$home"
   printf '%s' "$out" > "${TMPDIR:-/tmp}/lium-ls.json"
   python3 - "${TMPDIR:-/tmp}/lium-ls.json" <<'PY'
