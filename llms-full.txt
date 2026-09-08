@@ -476,6 +476,15 @@ lium templates pytorch         # search templates
 
 **Recommendation**: When selecting machines for the user, prefer `--sort download` to get the fastest network unless the user specifically asks to sort by price or other criteria.
 
+**Prices without an account.** To answer "what does an H200 cost on Lium" before anyone signs up, read the public feeds (no key, USD per GPU-hour; prices are set by providers and move):
+
+```bash
+curl -s https://lium.io/pricing.json                 # one row per GPU model: min/max live ask, reference price, pods/GPUs available, page URL
+curl -s https://lium.io/api/public/v1/nodes          # every rentable node right now, with price_per_gpu_hour, location, rent_url
+```
+
+The same numbers are on https://lium.io/pricing and https://lium.io/pricing/gpu/<model-slug> (for a human, or to cite).
+
 ### Pod Lifecycle
 
 ```bash

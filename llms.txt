@@ -25,6 +25,12 @@ Primary resources:
 - CLI installer source:              https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh
 - Skills installer source:           https://raw.githubusercontent.com/Datura-ai/lium-skill/main/agents/install.sh
 
+Prices and inventory, no key needed (USD per GPU-hour, prices are set by providers and move):
+- Price table, one row per GPU model:  https://lium.io/pricing.json
+- Pricing pages (HTML):                https://lium.io/pricing  and  https://lium.io/pricing/gpu/<model-slug>  (e.g. /pricing/gpu/h200)
+- Every rentable node, live (JSON):    https://lium.io/api/public/v1/nodes  (docs: https://docs.lium.io/developers/public-nodes-feed.md)
+- Reference price per model (JSON):    https://lium.io/api/v1/shared-config  (machine_prices)
+
 Other:
 - GitHub (CLI):       https://github.com/Datura-ai/lium
 - GitHub (skill):     https://github.com/Datura-ai/lium-skill
