@@ -5,10 +5,11 @@ Extracts each command line that starts with `lium` inside fenced code blocks of 
 then, read-only and without renting anything, checks with the installed CLI that
 
   * the (nested) subcommand exists — `lium <sub…> --help` exits 0;
-  * every `--flag` on the line is listed in that subcommand's `--help` (group flags count for `lium provider …`), or
-    is parsed by it anyway — `lium <sub> --help --flag` exits 0 — which is how a hidden alias such as `--json` passes.
-    A subcommand that ignores unknown options (`lium mine` forwards them to the validator, so `--help` exits 0 next to
-    any flag) gets no such credit: there only the `--help` text and the allow-list vouch for a flag.
+  * every `--flag` on the line is an option token of that subcommand's `--help` (group flags count for `lium provider …`;
+    `--port` is not matched by `--ports`), or is parsed by it anyway — `lium <sub> --help --flag` exits 0 — which is how
+    a hidden alias such as `--json` passes. A subcommand that ignores unknown options (`lium mine` forwards them to the
+    validator, so `--help` exits 0 next to any flag) gets no such credit: there only the `--help` text and the allow-list
+    vouch for a flag.
 
 Lines whose subcommand is a placeholder (`lium <command>`), chained commands past the first `&&`/`|`, and flags inside
 quoted remote commands are ignored. Known-upcoming flags live in an allow-list file (one `subcommand|--flag|why` per
@@ -135,7 +136,8 @@ for f, i, c in cmds:
         continue
     flags = [t.split("=")[0].strip("[]") for t in parts[j:] if t.startswith("--") and len(t) > 2]
     group_help = helptext(sub.split()[0])[1] if sub.startswith("provider") else ""
-    missing = [fl for fl in flags if fl not in h and fl not in group_help and not accepts(sub, fl)]
+    listed = set(re.findall(r"--\w[\w-]*", h + group_help))   # whole option tokens: `--port` is not covered by `--ports`
+    missing = [fl for fl in flags if fl not in listed and not accepts(sub, fl)]
     still = [fl for fl in missing if (sub, fl) not in allow and ("*", fl) not in allow]
     if missing and not still:
         allowed.append((f, i, c, missing))
