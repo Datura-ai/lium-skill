@@ -327,8 +327,10 @@ lium exec <pod> -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 -e NCCL_IB_DISABLE=1
 One independent process per GPU (batch inference, best-of-N generation, sweeps) does not
 need the interconnect and runs at full speed on any eight cards.
 
-Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed speed-test probe used to
-flag nodes under 100 Mbps; it does not predict Hugging Face or PyPI throughput. The same
+Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of the validator's
+VerifyX check, which fetches a real object of known size and hash (the speed-test average is
+the fallback when VerifyX has no figure; **Upload** follows the same order). It flags nodes under
+100 Mbps as slow; it does not predict Hugging Face or PyPI throughput. The same
 756 GB checkpoint pulled at 2.6–4 GB/s, 1.04 GB/s and 45–200 MB/s on three nodes listed in
 the same few-hundred-Mbps band. Measure before committing:
 
