@@ -15,8 +15,9 @@ OUT="${1:-$ROOT/llms-full.txt}"
 SKILL="$ROOT/lium/SKILL.md"
 CLI_REF="$ROOT/lium/references/cli-commands.md"
 SDK_REF="$ROOT/lium/references/sdk-reference.md"
+RECIPES="$ROOT/lium/references/recipes.md"
 
-for f in "$SKILL" "$CLI_REF" "$SDK_REF"; do
+for f in "$SKILL" "$CLI_REF" "$SDK_REF" "$RECIPES"; do
   [[ -f "$f" ]] || { echo "missing: $f" >&2; exit 1; }
 done
 
@@ -45,7 +46,7 @@ strip_detailed_references_section() {
 {
   echo "# Lium — Full Reference for Agents"
   echo
-  echo "Self-contained reference for AI agents. Includes skill overview, CLI command reference, and Python SDK reference."
+  echo "Self-contained reference for AI agents. Includes skill overview, CLI command reference, Python SDK reference, and recipes."
   echo "Source of truth: https://github.com/Datura-ai/lium-skill"
   echo
   echo "---"
@@ -64,6 +65,12 @@ strip_detailed_references_section() {
   echo "# Python SDK — Full Reference"
   echo
   cat "$SDK_REF"
+  echo
+  echo "---"
+  echo
+  echo "# Recipes — Copy-Paste Jobs With Teardown"
+  echo
+  cat "$RECIPES"
 } > "$OUT"
 
 echo "Wrote $(wc -l < "$OUT") lines to $OUT"

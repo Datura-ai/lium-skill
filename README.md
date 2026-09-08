@@ -36,7 +36,7 @@ lium init
 | Path | Purpose |
 |------|---------|
 | `lium/SKILL.md` | The skill itself — frontmatter plus agent instructions |
-| `lium/references/` | CLI and SDK references, loaded on demand |
+| `lium/references/` | CLI and SDK references plus copy-paste recipes, loaded on demand |
 | `agents/install.sh` | Source of `lium.io/agents/install.sh` (lium.io redirects to the raw file on `main`) |
 | `llms.txt` | Short discovery index for agents |
 | `llms-full.txt` | Self-contained reference, generated from the files above |
