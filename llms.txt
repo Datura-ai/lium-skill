@@ -22,6 +22,7 @@ Primary resources:
 - Skill file (with frontmatter):     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/SKILL.md
 - CLI reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md
 - SDK reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md
+- Recipes (serving, diffusion, RL, batch; each with teardown): https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/recipes.md
 - CLI installer source:              https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh
 - Skills installer source:           https://raw.githubusercontent.com/Datura-ai/lium-skill/main/agents/install.sh
 
