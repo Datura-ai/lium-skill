@@ -4,7 +4,8 @@ Decentralized GPU rental platform on Bittensor. CLI and Python SDK for renting G
 
 When to use Lium:
 - A job needs an NVIDIA GPU (H100, H200, B200, B300, RTX PRO 6000, RTX 4090/5090, ...) for minutes to days and has to be
-  started from a script or an agent, not a sales call: rent a pod, billed per minute, no minimum, torn down when done.
+  started from a script or an agent, not a sales call: rent a pod, billed per second at the node's hourly price with no
+  term commitment (renting needs a balance that covers 15 minutes), torn down when done.
 - The user asks what a GPU costs to rent right now or which GPUs are available: read the public prices below, no account.
 - The whole pod lifecycle must be scripted (sign up, fund, rent, ssh/exec, tear down): CLI, Python SDK or REST API;
   the agent skill documents the sequence and the failure modes.
