@@ -388,6 +388,21 @@ For fully-detached execution (survives SSH session close, stays running after `l
 lium exec my-pod "setsid nohup <cmd> </dev/null >/tmp/out.log 2>&1 &"
 ```
 
+#### Stopping a Remote Job — Never `pkill -f` From a One-Liner
+
+Inside `lium exec` (and any `ssh host bash -c '…'` one-liner) the whole command
+is the invoking shell's own command line, so `pkill -f "python train.py"` matches
+that shell too and kills the session before or instead of the job — the call
+returns a broken pipe and the job may still be running (two agents lost sessions
+this way on the same day). Stop jobs by PID: write one when you start (`… & echo $! > /tmp/job.pid`)
+and `kill "$(cat /tmp/job.pid)"`. If you must search by name, list first and
+exclude your own shell and its parent, then kill the PIDs you inspected:
+
+```bash
+lium exec my-pod "kill \$(cat /tmp/job.pid)"                                    # preferred
+lium exec my-pod "pgrep -f 'python train.py' | grep -vx -e \$\$ -e \$PPID"      # inspect, then kill <pid>
+```
+
 #### PEP 668 on Default PyTorch Template
 
 The default `daturaai/pytorch` image is based on Ubuntu 24.04 where system `pip` is PEP 668 protected (`externally-managed-environment`). Use one of:
