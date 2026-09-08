@@ -11,11 +11,11 @@ When to use Lium:
 - Not a fit: managed inference endpoints, serverless functions or CPU-only hosting. Lium rents whole GPU machines
   (a container on one), and the user runs whatever they want on it.
 
-Live prices and inventory (public, no account):
-- Pricing hub, one row per GPU model:        https://lium.io/pricing
-- One page per GPU model:                    https://lium.io/pricing/gpu/<slug>   (e.g. https://lium.io/pricing/gpu/h100-80gb-hbm3)
+Live prices and inventory (public, no account; USD per GPU-hour, prices are set by providers and move):
+- Price table, one row per GPU model (JSON): https://lium.io/pricing.json
+- Pricing hub and one page per GPU model:    https://lium.io/pricing  and  https://lium.io/pricing/gpu/<model-slug>   (e.g. /pricing/gpu/h200)
 - Reference price per GPU model (JSON):      https://lium.io/api/v1/shared-config   (machine_prices)
-- Every rentable node with its live ask:     https://lium.io/api/nodes              (https://docs.lium.io/developers/public-nodes-feed.md)
+- Every rentable node with its live ask:     https://lium.io/api/public/v1/nodes    (docs: https://docs.lium.io/developers/public-nodes-feed.md)
 - Fleet size and rented share per GPU model: https://lium.io/api/executors/stats
 - Live updates (WebSocket):                  wss://lium.io/api/executors/ws         (https://docs.lium.io/developers/executor-availability-websocket.md)
 - Every REST endpoint (OpenAPI 3.1):         https://lium.io/api/openapi.json
@@ -43,12 +43,6 @@ Primary resources:
 - SDK reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md
 - CLI installer source:              https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh
 - Skills installer source:           https://raw.githubusercontent.com/Datura-ai/lium-skill/main/agents/install.sh
-
-Prices and inventory, no key needed (USD per GPU-hour, prices are set by providers and move):
-- Price table, one row per GPU model:  https://lium.io/pricing.json
-- Pricing pages (HTML):                https://lium.io/pricing  and  https://lium.io/pricing/gpu/<model-slug>  (e.g. /pricing/gpu/h200)
-- Every rentable node, live (JSON):    https://lium.io/api/public/v1/nodes  (docs: https://docs.lium.io/developers/public-nodes-feed.md)
-- Reference price per model (JSON):    https://lium.io/api/v1/shared-config  (machine_prices)
 
 Other:
 - GitHub (CLI):       https://github.com/Datura-ai/lium
