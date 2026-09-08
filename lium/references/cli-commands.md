@@ -687,15 +687,20 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | 3 | API error — the API refused or failed the call: 401 (bad or revoked key), 404, 429, 5xx |
 | 4 | SSH error |
 | 5 | Pod not found |
-| 6 | Permission denied — the API answered 403 (an unverified account, for one) |
+| 6 | Permission denied — the API answered 403 (an empty balance on `lium up`, for one) |
 
 Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
 (`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
-`lium ls` with a revoked key exits `3`, with an unverified account `6`. The one
-exception is `lium provider …`, which keeps its own map (`1` arguments, `2` auth,
-`3` portal, `5` ssh, `6` config missing, `7` token-cache contention). `lium exec`
-exits with the remote command's code (`5` when no pod matched, `2` on a bad
-argument or unreadable script). Under `--json` (`exec`, `describe`, `balance`,
+`lium ls` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
+Inside a batch the rule changes: `rm`, `reboot`, `scp`, `rsync` (and `volumes rm`,
+`schedules rm`) finish the batch and exit `1` naming the items that failed, whatever
+the API answered for them (`Failed to remove pods: brave-orbit-b9`); only their
+target lookup before the batch exits `3`/`6`. The exceptions are `lium provider …`,
+which keeps its own map (`1` arguments, `2` auth, `3` portal, `5` ssh, `6` config
+missing, `7` token-cache contention), and `lium gpu-splitting …`, which runs on the
+host without the API and exits `1` on any failure. `lium exec` exits with the remote
+command's code (`5` when no pod matched, `2` on a bad argument or unreadable
+script). Under `--json` (`exec`, `describe`, `balance`,
 `fund`, `topup`, `signup`) a failure is one JSON object on stderr,
 `{"ok": false, "error": {"code": ..., "message": ...}}`, and stdout stays empty;
 `--format json` (`ls`, `ps`) reports a failure as text.
