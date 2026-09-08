@@ -346,9 +346,10 @@ lium exec <pod> "curl -L -o /dev/null -sS --max-time 20 -w '%{http_code} %{speed
 Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB checkpoint is
 4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
 0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
-the controlling machine. An `interconnect` field, a CDN-measured ingress/egress figure and
-`--nvlink` / `--min-ingress` filters are being added to the API and `lium ls`; until your
-CLI shows a **Link** column, these commands are the check.
+the controlling machine. An `interconnect` field and a CDN-measured ingress/egress figure
+are coming with lium-platform#61, and `lium ls` filters for NVLink and minimum ingress with
+lium#149; neither is released. Until your CLI shows a **Link** column, these commands are
+the check.
 
 ### Non-Interactive Funding
 
