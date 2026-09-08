@@ -193,9 +193,9 @@ run.close()          # remove the warm pod now
 | `machine` | str | `"<count>x<gpu>"` or `"<gpu>"`: `"1xH200"`, `"RTX4090"`, `"2xA100"`. Count defaults to 1. Cheapest matching node is rented. |
 | `requirements` | list, optional | pip packages, installed once per pod into a venv that also sees the image's packages |
 | `template_id` | str, optional | Docker template to rent with (default: the node's default template) |
-| `timeout` | float, default 3600 | seconds the function may run; `None` = unlimited. Pod removal is scheduled at `timeout + 15 min` |
+| `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min`, or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
-| `cleanup` | bool, default True | `False` keeps the pod indefinitely |
+| `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
 | `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; release after 0.0.33) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
