@@ -316,9 +316,11 @@ User must have a verified Bittensor wallet at https://lium.io/billing.
 export PATH="$HOME/.lium/bin:$PATH"  # needed in current shell session
 ```
 
-#### After `lium init --session` — Verify with `lium ls`
+#### After `lium init --session` — Verify with `lium balance`
 
-After completing the two-step auth, run `lium ls` to verify. If it returns results, auth is done.
+After completing the two-step auth, run `lium balance` to verify: a balance means the key
+works; an error with exit `3` means it does not. `lium ls` returns results with any key
+(the node list is public), so it proves nothing about the key.
 
 #### Exit Codes Hold Since 0.0.31 — Still Read the Output
 
