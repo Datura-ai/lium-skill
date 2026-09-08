@@ -190,9 +190,10 @@ lium up [OPTIONS] [NODE_ID]
                               Optional — omit it and the filters below auto-select
                               the best node. (`lium up --help` prints NODE_ID without
                               brackets; the argument is optional all the same.)
-                              In 0.0.33 pass the UUID (`id` in `lium ls --format json`):
-                              the HUID answers "Node '<huid>' not found" although the
-                              help lists it (DAH-2930 fixes this).
+                              Pass the UUID (`id` in `lium ls --format json`): in the
+                              current release (0.0.37 and earlier) the HUID answers
+                              "Node '<huid>' not found" although the help lists it
+                              (lium#153 fixes this, not released).
   -n, --name TEXT             Custom pod name
   -t, --template_id TEXT      Template ID
   -v, --volume TEXT           Volume spec: 'id:<HUID>' or 'new:name=<NAME>[,desc=<DESC>]'
