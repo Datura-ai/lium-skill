@@ -317,12 +317,13 @@ and NCCL fails on its first all-reduce with `unhandled cuda error` / `operation 
 supported`.
 
 Decision rule for TP/FSDP jobs: all `NV#` and all `OK` → proceed. Anything else →
-`lium rm <pod>` and pick another node. If the job must run there anyway, NCCL only works
-over loopback sockets, and TP=8 serving of a large model is impractical:
+`lium rm <pod> -y` and pick another node. If the job must run there anyway, NCCL only works
+over loopback sockets, and TP=8 serving of a large model is impractical. Each `lium exec` is
+a fresh SSH session, so a bare `export` in one call is gone in the next; pass the variables
+with `-e` on the call that runs the job:
 
 ```bash
-export NCCL_P2P_DISABLE=1 NCCL_SHM_DISABLE=1
-export NCCL_IB_DISABLE=1 NCCL_SOCKET_IFNAME=lo   # virtualised host without RDMA NICs
+lium exec <pod> -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 -e NCCL_IB_DISABLE=1 -e NCCL_SOCKET_IFNAME=lo "python train.py"   # virtualised host without RDMA NICs
 ```
 
 One independent process per GPU (batch inference, best-of-N generation, sweeps) does not
@@ -335,7 +336,7 @@ the same few-hundred-Mbps band. Measure before committing:
 
 ```bash
 lium exec <pod> "curl -o /dev/null -sS -w '%{http_code} %{speed_download}\n' 'https://speed.cloudflare.com/__down?bytes=50000000'"   # HTTP code, bytes/s (>= 100 MB is refused with 403)
-lium exec <pod> "cd /workspace && time hf download openai-community/gpt2 model.safetensors --local-dir /workspace/probe"
+lium exec <pod> "curl -L -o /dev/null -sS --max-time 20 -w '%{http_code} %{speed_download}\n' https://huggingface.co/openai-community/gpt2/resolve/main/model.safetensors"   # same for the Hugging Face CDN; -L follows the redirect, 20 s cap, nothing written to disk
 ```
 
 Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB checkpoint is
