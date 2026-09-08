@@ -13,6 +13,7 @@ binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
 - [lium ls](#lium-ls)
 - [lium up](#lium-up)
 - [lium ps](#lium-ps)
+- [lium audit](#lium-audit)
 - [lium ssh](#lium-ssh)
 - [lium exec](#lium-exec)
 - [lium scp](#lium-scp)
@@ -246,6 +247,33 @@ lium ps [OPTIONS] [POD_ID]
 
 `lium ps --format json` **is supported** and is the way an agent should read pod
 state. There is no `-a/--all` and no `--sort`.
+
+## lium audit
+
+**Not in lium 0.0.33 — lium#160, not released.** Who did what to the account's pods, and
+when: every rent, reboot, edit and delete with the session or API key that requested it;
+entries the platform wrote by itself (a validator reply, a balance stop) say `platform`.
+Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208); against
+today's API it exits `3` with a hint.
+
+```bash
+lium audit [OPTIONS]                 # lium#160, not released
+  --pod TEXT             Only this pod: id, huid, name or index from the last ps; a deleted
+                         pod's full id
+  --since TEXT           Only events after this: 24h, 30m, 7d or an ISO timestamp (else exit 2)
+  --key TEXT             Only actions made with this API key id
+  --limit INTEGER        Newest events to fetch, 1–1000 (default 200; out of range exits 2 locally)
+  --json                 Print the events as machine-readable JSON (newest first)
+```
+
+The table — When (UTC) / Pod / What / By — reads oldest first. `By` is `key <name> (<id8>)`,
+`session` (browser) or `platform`. Exit `5` when `--pod` names no listed pod.
+
+```bash
+lium audit --since 24h                                              # what happened today
+lium audit --pod my-pod                                             # one pod's history
+lium audit --json | jq '.[] | select(.actor.api_key_name == "ci")'  # everything one key did
+```
 
 ## lium ssh
 

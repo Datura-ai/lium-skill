@@ -132,6 +132,7 @@ it has to be `lium.exec(pod, command="nvidia-smi")`.
 | `wallets()` | List connected wallets |
 | `add_wallet(bt_wallet)` | Add Bittensor wallet |
 | `get_my_user_id()` | Get current user ID |
+| `events(*, since=, pod_id=, api_key_id=, limit=200)` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(lium#160, not released)* |
 
 ### Complete Example
 
