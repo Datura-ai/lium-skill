@@ -610,8 +610,7 @@ lium exec "$NAME" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheade
 
 If either number is below what you asked for, `lium rm` the pod immediately and
 rent again (another executor: pass its HUID from `lium ls` as `NODE_ID`). Keep
-the `nvidia-smi -L` output; it is the evidence for a refund. The CLI will do this
-check for you with `lium up --verify-gpus` / `--strict-gpus` (upcoming, CLI > 0.0.33).
+the `nvidia-smi -L` output; it is the evidence for a refund.
 
 ### Pod Gotchas — The First Hour
 
@@ -702,7 +701,7 @@ lium exec "$NAME" "nvidia-smi --query-gpu=index,utilization.gpu,memory.used --fo
 
 Zero utilisation across all GPUs for more than a few minutes means the job is
 stuck on CPU work, on I/O from `/root`, or has crashed — check the log before the
-bill grows. (`lium top` for this is upcoming, CLI > 0.0.33.)
+bill grows.
 
 ### Cost Hygiene
 
@@ -732,20 +731,18 @@ Copy-paste jobs, each ending in a teardown, in
 best-of-N image/video diffusion with one process per GPU, RL / simulation,
 a batch data job, and the "verify what you paid for" check as a script.
 
-### Upcoming (CLI > 0.0.33) — Do Not Use Yet
+### Only What 0.0.33 Has
 
-These are on review branches, not in any release. Probe with `lium <cmd> --help`
-before relying on one; until then use the workarounds in this file.
+This skill describes CLI 0.0.33 and nothing that is not released; probe with
+`lium <cmd> --help` before relying on a flag you do not see here.
 
-| Upcoming | Today |
-|----------|-------|
-| `lium up --verify-gpus` / `--strict-gpus` | `nvidia-smi -L \| wc -l` vs `ps --format json` `gpu_count` |
-| `lium exec --detach` / `--log` | `nohup setsid ... < /dev/null &` |
-| `lium templates --format json`, id column | `curl .../api/templates` or `Lium().templates()` |
-| `--json` alias on `ps`, `ls`, `templates`, `balance`; `balance --format json` | `--format json` on `ps`/`ls`, `--json` on `balance` |
-| Key fingerprint + source in 401/403 messages | check `LIUM_API_KEY` vs `~/.lium/config.ini` yourself |
-| `LIUM_NONINTERACTIVE=1` refusing to prompt | pass `-y`, `--no-ssh`, all arguments |
-| `Lium.up(..., wait=True)`, `exec(detach=True)`, `rsync(bwlimit=...)`, `cp()` | see the SDK reference's agent recipe |
+- Verify the GPU count yourself: `nvidia-smi -L | wc -l` inside the pod against `gpu_count` from `lium ps --format json`.
+- Detach long jobs by hand: `nohup setsid ... > log 2>&1 < /dev/null &` through `lium exec`.
+- Template ids: `curl .../api/templates` or `Lium().templates()`.
+- Machine-readable output: `--format json` on `ps`/`ls`, `--json` on `balance`/`exec`/`describe`.
+- A 401/403 means the wrong key: check `LIUM_API_KEY` against `~/.lium/config.ini` yourself.
+- Never wait for a prompt: pass `-y`, `--no-ssh` and every argument up front.
+- SDK: see the SDK reference's agent recipe for `up` → `wait_ready` → `exec` → `down`.
 
 ## CLI Quick Reference
 
