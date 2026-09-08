@@ -481,7 +481,7 @@ curl -s https://lium.io/pricing.json                 # one row per GPU model: mi
 curl -s https://lium.io/api/public/v1/nodes          # every rentable node right now, with price_per_gpu_hour, location, rent_url
 ```
 
-The same numbers are on https://lium.io/pricing and https://lium.io/pricing/gpu/<model-slug> (for a human, or to cite).
+The same numbers are on https://lium.io/pricing and https://lium.io/gpu/<model-slug> (for a human, or to cite).
 
 ### Pod Lifecycle
 

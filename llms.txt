@@ -13,7 +13,7 @@ When to use Lium:
 
 Live prices and inventory (public, no account; USD per GPU-hour, prices are set by providers and move):
 - Price table, one row per GPU model (JSON): https://lium.io/pricing.json
-- Pricing hub and one page per GPU model:    https://lium.io/pricing  and  https://lium.io/pricing/gpu/<model-slug>   (e.g. /pricing/gpu/h200)
+- Pricing hub and one page per GPU model:    https://lium.io/pricing  and  https://lium.io/gpu/<model-slug>   (e.g. /gpu/h200)
 - Reference price per GPU model (JSON):      https://lium.io/api/v1/shared-config   (machine_prices)
 - Every rentable node with its live ask:     https://lium.io/api/public/v1/nodes    (docs: https://docs.lium.io/developers/public-nodes-feed.md)
 - Fleet size and rented share per GPU model: https://lium.io/api/executors/stats
