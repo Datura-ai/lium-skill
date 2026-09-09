@@ -1,6 +1,6 @@
 # Lium Recipes for Agents
 
-Copy-paste jobs against lium CLI 0.0.33. Each one follows the playbook in
+Copy-paste jobs against the released lium CLI (0.0.37). Each one follows the playbook in
 `SKILL.md`: unique name, `--ttl`, GPU-count check, `/workspace` for everything,
 detached work, results pulled with `rsync`, and a teardown that is confirmed with
 `lium ps`. Replace the GPU type, count and model to taste. All of them assume
@@ -13,6 +13,11 @@ Shared helpers used below:
 rexec() { lium exec "$1" --json "$2" | jq -r '.results[0].stdout'; }
 # Host and port of a pod's SSH endpoint
 sshinfo() { lium ps "$1" --format json | jq -r '.[0].ssh_cmd | capture("@(?<h>\\S+).*-p (?<p>\\d+)") | "\(.h) \(.p)"'; }
+# Rent with the built-in GPU check; when up fails after the rent was accepted (pod_not_ready
+# after --timeout, a check that could not run), remove the pod so nothing keeps billing.
+# Uses $NAME for the cleanup — set it and pass --name "$NAME" (every recipe below does).
+rent() { lium up "$@" -y --no-ssh --verify-gpus --strict-gpus && return 0
+  lium ps "$NAME" --format json >/dev/null 2>&1 && lium rm "$NAME" -y; return 1; }
 # Pull a directory from a pod (resumable, throttled, no compression)
 pull() { read -r H P < <(sshinfo "$1"); rsync -a --partial --inplace --info=progress2 --bwlimit="${4:-20000}" \
   -e "ssh -p $P -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" "root@$H:$2" "$3"; }
@@ -30,7 +35,7 @@ pull() { read -r H P < <(sshinfo "$1"); rsync -a --partial --inplace --info=prog
 ## Verify what you paid for
 
 Run this immediately after every `lium up`. It fails (and removes the pod) when
-the billed GPU count or the visible GPU count is below what was requested.
+the billed GPU count or the visible GPU count is not the requested count.
 
 ```bash
 #!/usr/bin/env bash
@@ -51,8 +56,8 @@ fi
 ```
 
 If it fails, rent again on a **different** executor: pick the `id` (the UUID;
-0.0.33 rejects the HUID) from `lium ls --gpu <type> --count <n> --format json`
-and pass it as `NODE_ID` (`lium up <id> --name ... --ttl ... -y --no-ssh`).
+the released CLI rejects the HUID) from `lium ls --gpu <type> --count <n> --format json`
+and pass it first (`rent <id> --name ... --ttl ...`; the helper forwards it to `lium up`).
 Keep the two JSON files.
 
 ## LLM serving on 8 GPUs (vLLM or SGLang)
@@ -64,7 +69,7 @@ before that.
 
 ```bash
 NAME=serve-$(date +%s); MODEL=Qwen/Qwen2.5-72B-Instruct; WANT=8
-lium up --gpu H200 -c $WANT --name "$NAME" --ttl 8h -y --no-ssh
+rent --gpu H200 -c $WANT --name "$NAME" --ttl 8h || exit 1
 ./verify_gpus.sh "$NAME" $WANT
 
 cat > setup.sh <<'EOF'
@@ -115,7 +120,7 @@ tear down. Editing, upscaling and encoding happen on a cheap pod or locally.
 
 ```bash
 NAME=gen-$(date +%s); WANT=8
-lium up --gpu H200 -c $WANT --name "$NAME" --ttl 4h -y --no-ssh
+rent --gpu H200 -c $WANT --name "$NAME" --ttl 4h || exit 1
 ./verify_gpus.sh "$NAME" $WANT
 
 cat > setup.sh <<'EOF'
@@ -159,14 +164,14 @@ H100/H200; on Blackwell rely on SDPA/cuDNN attention.
 ## RL / simulation
 
 Environment stepping is CPU-bound and the policy update is GPU-bound: use one
-GPU, many CPU cores (`ram_gb`/CPU count are in `lium ls --format json`), and
+GPU, plenty of RAM (`ram_gb` is in `lium ls --format json`; the CLI shows no CPU count — read `nproc` on the pod right after `up`), and
 checkpoint to `/workspace` every few minutes because container restarts kill
 processes but keep `/workspace`.
 
 ```bash
 NAME=rl-$(date +%s)
 lium ls --gpu H100 --count 1 --format json | jq -r 'sort_by(.price_per_hour) | .[0:5][] | "\(.huid) \(.ram_gb)GB RAM $\(.price_per_hour)/h \(.country)"'
-lium up --gpu H100 -c 1 --name "$NAME" --ttl 12h -y --no-ssh
+rent --gpu H100 -c 1 --name "$NAME" --ttl 12h || exit 1
 ./verify_gpus.sh "$NAME" 1
 
 cat > setup.sh <<'EOF'
@@ -206,7 +211,7 @@ an idle 8-GPU node hurts most.
 
 ```bash
 NAME=batch-$(date +%s); WANT=2
-lium up --gpu RTX4090 -c $WANT --name "$NAME" --ttl 6h -y --no-ssh
+rent --gpu RTX4090 -c $WANT --name "$NAME" --ttl 6h || exit 1
 ./verify_gpus.sh "$NAME" $WANT
 
 cat > setup.sh <<'EOF'
