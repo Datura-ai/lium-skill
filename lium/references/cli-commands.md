@@ -1,6 +1,6 @@
 # Lium CLI Command Reference
 
-Written against `lium --version` **0.0.33**. Every flag below appears in that
+Written against `lium --version` **0.0.37**. Every flag below appears in that
 binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
 `lium <command> --help` is the authority, not this file.
 
@@ -188,8 +188,11 @@ see "Before You Rent 8 GPUs" in SKILL.md.
 `--max-price` filter on `ls`; filter the JSON (`jq`) or use the filters on
 [`lium up`](#lium-up).
 
-`/executors` is a public endpoint: `lium ls` succeeds with an invalid or missing
+`/executors` is a public endpoint: `lium ls` succeeds with an invalid (revoked)
 API key, so it proves nothing about authentication — use `lium balance` for that.
+(With no key configured at all it exits 2 before any request; the commands that run
+the interactive setup first — `up`, `ps`, `describe`, `logs`, `audit` — start the
+browser auth flow instead.)
 
 ## lium up
 
@@ -218,6 +221,19 @@ lium up [OPTIONS] [NODE_ID]
                               "tomorrow 01:00", "2025-10-20 15:30")
   --jupyter                   Install Jupyter Notebook (auto-selects a port)
   --no-ssh                    Create the pod and return instead of opening an SSH session
+  --timeout SECONDS           Time budget for the whole command: finding the node,
+                              renting it and waiting for the pod [default: 900]. Runs
+                              out before the rent → exit 1, no pod. Runs out while the
+                              pod is still starting → exit 1 with the pod named — it
+                              keeps running and billing.
+  --ready-timeout SECONDS     Bound only the wait for the pod to become ready (exit 1,
+                              pod left running and named). Default: whatever
+                              --timeout leaves.
+  --verify-gpus               After the pod is ready, count the GPUs nvidia-smi sees
+                              over SSH and compare with the billed count
+  --strict-gpus               Remove the pod automatically when its GPU count does not
+                              match what was requested or billed (a pod that could not
+                              be checked over SSH is kept)
   --restore-backup TEXT       Backup ID to restore after the pod starts
   --restore-to TEXT           New or empty subdirectory for the startup restore
                               (required together with --restore-backup)
@@ -237,19 +253,39 @@ lium up [OPTIONS] [NODE_ID]
 `--no-ssh` matters for agents: without it `lium up` ends by opening an interactive
 SSH session (or, with `--image`, by streaming container logs).
 
-`lium up` has **no `--format json`**. With `--no-ssh` it prints one line,
+`lium up` has **no `--format json`**. With `--no-ssh` it prints the deploy
+estimate, `renting <huid>…`, `pod <name> (id: <uuid>) created; waiting for it to
+become ready` and `waiting for <huid>… <STATUS> (N s) · est. ready in ~M s (phase:
+…)` progress lines on stdout, ends with one line of fixed shape,
 `Pod <huid> (name: <name>, id: <uuid>) ready`, and exits 0. Read the pod record
 afterwards with `lium ps <name> --format json` (or `lium describe <name> --json`).
 Pass `--name` so that lookup is unambiguous.
 
-`-c/--count` is a **filter on the node's GPU count** — it picks a node that has
-exactly that many GPUs; it is not a request that the platform enforces. After
-`up`, compare `gpu_count` in `lium ps --format json` with what you asked for,
-and run `nvidia-smi -L | wc -l` on the pod (see the skill's "Verify what you
-paid for").
+`-c/--count` selects a node whose **total** GPU count equals N (`gpu_count` in
+`lium ls`); free GPUs are not checked at selection time, so on a GPU-split host
+with some GPUs already rented the rent takes what is free and the check below
+catches the difference. Once the pod is running and `--ttl` is scheduled,
+`lium up` **checks the GPU count itself, on every run**: the count the pod is
+billed for (the `/pods` row's own count — what the SDK exposes as
+`PodInfo.gpu_count`; no CLI JSON prints it in 0.0.37) against `--count` — or,
+without `--count`, the node's free GPU count. With `--verify-gpus` it also runs
+`nvidia-smi -L` over SSH and compares the visible count with the billed one. A
+mismatch exits 1 with code `gpu_count_mismatch`; **without `--strict-gpus` the
+pod stays running and billing** (the message names it — `lium rm` it), with
+`--strict-gpus` the CLI removes it first. A pod that could not be checked over
+SSH exits 1 with `gpu_verification_failed` and is kept either way.
+
+Every exit 1 after "created" can leave a billing pod: `pod_not_ready` (the
+`--timeout`/`--ready-timeout` budget ran out while the pod was starting — no TTL
+was scheduled yet), `gpu_count_mismatch` without `--strict-gpus`,
+`gpu_verification_failed`, `jupyter_install_failed`; `pod_start_failed` exits 3
+and the pod may still be listed. So `lium up … || exit 1` is not enough for an
+unattended run: on any non-zero exit run `lium ps <name> --format json` and
+`lium rm <name> -y` when a pod exists (the skill's recipes do this).
 
 `--ttl`/`--until` are applied **after** the pod is running (the termination is
-scheduled with `lium schedules`), so a pod that failed on the way to `RUNNING`
+scheduled through the API, `Lium.schedule_termination`; `lium schedules` lists it),
+so a pod that failed on the way to `RUNNING`
 has no TTL — check `lium ps` and `lium rm` it yourself.
 
 Examples:
@@ -286,18 +322,23 @@ lium ps [OPTIONS] [POD_ID]
 
 `lium ps --format json` **is supported** and is the way an agent should read pod
 state. There is no `-a/--all`, no `--sort`, no `--watch` and no `--json` alias
-(`--json` is rejected with "No such option"). Each object carries: `id`, `huid`,
-`name`, `status`, `gpu_type`, `gpu_count`, `config`, `template`, `price_per_hour`,
-`spent_usd` (uptime × price, computed client-side), `uptime`, `created_at`, `ip`,
-`ports` (map of internal → external port), `ssh_cmd`, `removal_scheduled_at`,
-`jupyter_url`.
+(`--json` is rejected with "No such option"). Each object carries: `index` (the
+row number this shell's index targeting resolves against; `null` for a filtered
+listing), `id`, `huid`, `name`, `status`, `gpu_type`, `gpu_count` (the **node's**
+total GPU count, not the billed count on a GPU-split host), `config`,
+`template`, `price_per_hour`, `spent_usd` (uptime × price, computed client-side),
+`uptime`, `created_at`, `ip`, `ports` (map of internal → external port),
+`ssh_cmd` (the API's `ssh root@<host> -p <port>`), `ssh_command` (a ready
+`ssh -p <port> -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=<pin> root@<host>`
+with the pod's host key pinned under `~/.lium/known_hosts/<pod id>` — add
+`-i <key>` yourself), `removal_scheduled_at`, `jupyter_url`.
 
 ```bash
 lium ps --format json | jq -r '.[] | "\(.name) \(.status) \(.gpu_count)x\(.gpu_type) $\(.price_per_hour)/h spent $\(.spent_usd)"'
 lium ps my-pod --format json | jq -r '.[0].ssh_cmd'
 ```
 
-Pods that are being deleted are not listed; `FAILED`/`CREATION_FAILED` pods stay
+A pod being deleted may show `DELETING` briefly; `FAILED`/`CREATION_FAILED` pods stay
 visible for a few minutes.
 
 ## lium describe
@@ -339,7 +380,7 @@ lium exec [OPTIONS] TARGETS [COMMAND]
   COMMAND            Command to execute (quote multi-word commands)
   -s, --script TEXT  Execute a local script file on the pod
   -e, --env TEXT     Set environment variables (KEY=VALUE)
-  --json             Print machine-readable JSON ({"ok", "results": [...]})
+  --json             Print machine-readable JSON (stdout, stderr, exit_code) instead of raw output
 ```
 
 Examples:
@@ -354,7 +395,8 @@ lium exec 1 -e API_KEY=xyz "python app.py"
 lium exec 1 --json "python train.py"
 ```
 
-There is no `--timeout`, no `--detach` and no `--output` in 0.0.33. `exec` waits
+There is no `--timeout`, no `--detach` (lium#211, not released) and no `--output`
+in 0.0.37. `exec` waits
 for the remote command **and every child that still holds its stdout/stderr**, so
 a job started with a bare `&` keeps `exec` blocked. Detach it fully:
 
@@ -421,14 +463,19 @@ lium rsync TARGETS LOCAL_PATH [REMOTE_PATH]
 
 There is no `--bwlimit`, `--exclude`, `--delete` or download direction. To pull
 results, or to tune the transfer, call `rsync` directly with the SSH details from
-`lium ps --format json` (`ssh_cmd` gives user, host and port; the key is
-`ssh.key_path` in `lium config show`):
+`lium ps --format json`: `ssh_command` is a ready `ssh -p <port> -o
+StrictHostKeyChecking=accept-new -o UserKnownHostsFile=<pin> root@<host>` with the
+pod's host key pinned under `~/.lium/known_hosts/<pod id>`; add your key
+(`ssh.key_path` in `lium config show`; spell it `$HOME/…`, not `~/…` — `~`
+inside `-e` is expanded by ssh from the passwd entry, not from `$HOME`) and drop
+the trailing `root@<host>` for `-e` (rsync unquotes the `-o '…'` arguments
+itself):
 
 ```bash
-read -r HOST PORT < <(lium ps my-pod --format json | jq -r '.[0].ssh_cmd | capture("@(?<h>\\S+).*-p (?<p>\\d+)") | "\(.h) \(.p)"')
-rsync -a --partial --inplace --info=progress2 --bwlimit=20000 \
-  -e "ssh -p $PORT -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
-  root@$HOST:/workspace/out/ ./out/
+SSH_COMMAND=$(lium ps my-pod --format json | jq -r '.[0].ssh_command')
+rsync -a --partial --inplace --progress --bwlimit=20000 \
+  -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+  "${SSH_COMMAND##* }:/workspace/out/" ./out/
 ```
 
 Do not add `-z` for media, checkpoints or other already-compressed data — it
@@ -529,7 +576,7 @@ lium templates [SEARCH]
 
 **Notes**:
 - The table shows Name / Image / Tag / Type / Status — **no template id** and no
-  `--format json` in 0.0.33. To get an id for `lium up -t`, read the API
+  `--format json` in 0.0.37 (lium#217, not released). To get an id for `lium up -t`, read the API
   directly (the same key the CLI uses):
   ```bash
   curl -s https://lium.io/api/templates -H "X-API-Key: $LIUM_API_KEY" \
@@ -757,9 +804,12 @@ form accepts is **not** uniform:
 against pod names and IDs; they do not resolve indices, so they report the pod as
 not found unless a pod is actually named `1`.
 
-Indices come from the most recent listing and shift whenever anything is created
-or removed. Prefer names: read them once with `lium ps --format json` and pass
-those.
+An index is resolved against the last `lium ps` **run in this shell** (the CLI
+keeps that snapshot for 10 minutes) and refused with exit 2 / `stale_pod_index`
+(a configuration error: "Pod index 1 cannot be used before 'lium ps' has shown
+the list in this shell") when there is no snapshot, it is older than 10 minutes,
+or the pod that row showed is gone. Prefer names: read them once with `lium ps --format json` and
+pass those.
 
 ## Environment Variables
 
@@ -798,11 +848,15 @@ command's own exit code. (`lium provider` keeps a separate code map — see its
 Two things still need care:
 
 - `lium ls` and `lium templates` read **public endpoints**: they succeed, and exit
-  0, with a revoked or missing API key. Neither is an auth check — use
-  `lium balance` (exit 3 on a bad key).
-- With `--json` / `--format json`, a failure is a single JSON object on
-  **stderr** — `{"ok": false, "error": {"code": "...", "message": "..."}}` — and
-  stdout stays empty. Parse stdout for the result and the exit code for success.
+  0, with a revoked or invalid API key (with no key configured they exit 2 before
+  any request, as the table says). Neither is an auth check — use `lium balance`
+  (exit 3 on a bad key).
+- With `--json` (`describe`, `exec`, `audit`, `fund`, `balance`, `signup`,
+  `topup`, `provider`), a failure is a single JSON object on **stderr** —
+  `{"ok": false, "error": {"code": "...", "message": "..."}}` — and stdout stays
+  empty. `ls` / `ps --format json` have no such envelope: a failure prints a plain
+  error line on **stdout** (`Error: Invalid API key` → exit 3, `Pod 'x' not found`
+  → exit 5), so check the exit code before piping stdout to `jq`.
 
 ```bash
 lium balance --json >/dev/null 2>&1 && echo "auth OK" || echo "auth FAILED ($?)"

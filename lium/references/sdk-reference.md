@@ -1,6 +1,6 @@
 # Lium Python SDK Reference
 
-Written against `lium.io` **0.0.33** (`lium/sdk/client.py`). Signatures below are
+Written against `lium.io` **0.0.37** (`lium/sdk/client.py`, tag `v0.0.37`). Signatures below are
 copied from the source; when in doubt, `python -c "import lium, inspect; help(lium.Lium)"`
 is the authority.
 
@@ -59,10 +59,19 @@ Signatures follow Python notation: everything after `*` is keyword-only and rais
 to be `lium.exec(pod, command="nvidia-smi")`. Methods that take a `pod` want a
 `PodInfo` (from `ps()` / `wait_ready()`), not an id string, unless stated.
 
-Every HTTP call goes through one `_request` with a 30 s timeout and **3 attempts
-with back-off on 429, 5xx and connection errors** — including `POST` rents. A rent
-that times out client-side may therefore be retried and create a second pod;
-give every pod a unique `name` and check `ps()` before retrying yourself.
+Every HTTP call goes through one `_request` with a 30 s timeout (none for
+`logs(follow=True)`). Reads (`GET`, `HEAD`, `OPTIONS`) get **up to 3 attempts with
+back-off** on 429, 5xx and connection
+errors; anything that mutates (`POST`, `PUT`, `PATCH`, `DELETE`) is, by default,
+repeated only after a 429 — a timed-out `POST` may have succeeded server-side, and
+repeating it blindly would create a second pod, template or backup. Three
+idempotent POSTs opt in to the full retry (`schedule_termination`,
+`backup_cancel`, `restore_cancel`); `pod_events` and the rent are sent exactly once. The rent inside `up()` is
+sent exactly once with an `Idempotency-Key` header; if that request fails
+(timeout, 5xx, 429), `up()` first looks for a pod with your `name` on that node
+(`ps()`, 3 tries) and only re-sends when none exists. Give every pod a unique
+`name` — it is what makes that lookup unambiguous — and check `ps()` before
+retrying yourself.
 
 ### Discovery
 
@@ -85,7 +94,10 @@ give every pod a unique `name` and check `ps()` before retrying yourself.
 |--------|---------|-------|
 | `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | `RentResult` | **Coming with lium#209 — not in 0.0.37, the latest release** (`pip show lium.io`; until it ships use `ls()` + `up(executor_id=)` below). Rent the cheapest node matching a spec in one call (the backend picks when `GET /version` lists `rent_by_spec` — production does today; against an older backend the client picks the cheapest exact match; `dry_run=True` prices without renting). `.pod`, `.executor`, `.price_per_hour`. |
 | `up(*, executor_id, name="Your Pod", template_id=None, dockerfile_content=None, volume_id=None, ports=None, ssh_keys=None, ssh_name=None, enable_volume_encryption=True, backup_id=None, restore_path=None)` | `dict` | Raw rent response (`id`, `pod_name`, `status`, …). **Not** a `PodInfo` — pass it to `wait_ready`. Registers your SSH public key server-side first. `template_id` and `dockerfile_content` are mutually exclusive; `backup_id`/`restore_path` go together. Raises `ValueError` for an unknown executor or when no SSH key is found. |
-| `wait_ready(pod, *, timeout=300, poll_interval=10)` | `PodInfo \| None` | `pod` may be an id string, a `PodInfo` or the dict from `up()`. Polls `ps()` until `status == "RUNNING"` and `ssh_cmd` is set. **Returns `None` on timeout** — the pod may still be provisioning and billing; check `ps()` and `down()` it. |
+| `wait_ready(pod, *, timeout=300, poll_interval=None, on_poll=None)` | `PodInfo \| None` | `pod` may be an id string, a `PodInfo` or the dict from `up()`. Polls `ps()` until `status == "RUNNING"` and `ssh_cmd` is set — every 2 s for the first 90 s, then every 10 s (`poll_interval` fixes the interval; `on_poll(pod, status, elapsed)` is called after each poll). **Returns `None` on timeout** (`timeout=None` waits until ready or failed) — the pod may still be provisioning and billing; check `ps()` and `down()` it. **Raises `PodStartError`** when the pod reaches `FAILED`, `CREATION_FAILED`, `STOPPED`, `BROKEN`, … , vanishes after being listed, or is still not listed 20 s after the first poll; the error carries `.pod`, `.status`, `.history` and `.cause` (the backend's reason). |
+| `refresh_pod(pod)` | `PodInfo` | Re-read one pod (`pod` may be an id or a `PodInfo`); `LiumNotFoundError` when it is gone. |
+| `pod_events(pod_id)` / `pod_failure_cause(pod_id)` | `list[dict]` / `str \| None` | The pod's event log (`GET /pods/{id}/events`) and the last failure reason in it — what `PodStartError.cause` is filled from. |
+| `poll_delay(elapsed, poll_interval=None)` | `float` | Class method: the sleep `wait_ready` uses (2 s under 90 s elapsed, 10 s after). |
 | `down(pod)` / `rm(pod)` | `dict` | `DELETE /pods/{id}`. Irreversible. |
 | `reboot(pod, volume_id=None)` | `dict` | Re-creates the container; only the volume (`/workspace` by default) survives. |
 | `logs(pod_id, *, tail=100, follow=False)` | `Generator[bytes]` | Container PID 1 output. Takes an **id string**. |
@@ -96,8 +108,7 @@ give every pod a unique `name` and check `ps()` before retrying yourself.
 | `install_jupyter(pod, *, jupyter_internal_port)` | `dict` | |
 
 There is no `wait=`, `ttl=`, `verify_gpus=` or context-manager form of `up()` in
-0.0.33 — compose them yourself (see [Agent Recipe](#agent-recipe)). Those are
-tracked as upcoming SDK work.
+0.0.37 — compose them yourself (see [Agent Recipe](#agent-recipe)).
 
 ### Remote Execution
 
@@ -106,10 +117,12 @@ tracked as upcoming SDK work.
 | `exec(pod, *, command, env=None)` | `dict` | `{"stdout", "stderr", "exit_code", "success"}`. Runs over paramiko with stdin closed. **No timeout** — wrap the remote side in `timeout 600 bash -lc '...'` when a hang would block you. Blocks until every process holding stdout/stderr exits, so detach long jobs (below). |
 | `stream_exec(pod, *, command, env=None)` | `Generator[dict]` | Yields `{"type": "stdout"\|"stderr", "data": str}` with a PTY. |
 | `exec_all(pods, *, command, env=None, max_workers=10)` | `list[dict]` | Threaded `exec` across pods; each result carries `"pod"`. |
-| `ssh(pod)` | `str` | `ssh -i <key> ... root@host -p port` — a ready command line. |
-| `ssh_connection(pod, timeout=30)` | context manager → `paramiko.SSHClient` | For SFTP or custom channels. |
+| `ssh(pod, *, refresh=False)` | `str` | `ssh -i <key> -p <port> -o StrictHostKeyChecking=accept-new -o 'UserKnownHostsFile="/home/<you>/.lium/known_hosts/<pod id>"' root@<host>` — a ready command line with the pod's host key pinned. `refresh=True` re-reads the pod first. |
+| `ssh_argv(pod)` | `list[str]` | The same command as an argument list for `subprocess`. |
+| `ssh_connection(pod, timeout=30)` | context manager → `paramiko.SSHClient` | For SFTP or custom channels. Pins the host key the same way; a changed key raises `LiumHostKeyError` (`LIUM_SSH_INSECURE=1` disables the check). |
 
-`env` values are exported with `export K="v"` — quote-safe for simple values only.
+`env` values are exported with `export NAME=<shlex.quote(value)>`, so any value is
+safe (spaces, quotes, `$`).
 
 ### File Transfer
 
@@ -117,7 +130,8 @@ tracked as upcoming SDK work.
 |--------|---------|-------|
 | `scp(pod, *, local, remote)` / `upload(pod, *, local, remote)` | `None` | SFTP **single file**, local → pod. `remote` must be a file path, not a directory. |
 | `download(pod, *, remote, local)` | `None` | SFTP single file, pod → local. |
-| `rsync(pod, *, local, remote)` | `None` | `rsync -avz` **local → pod only**; raises `RuntimeError` on failure. No download direction, no `--bwlimit`, and `-z` is always on. |
+| `rsync(pod, *, local, remote)` | `None` | `rsync -avz` **local → pod only** over the pinned-host-key `ssh`; raises `RuntimeError` on failure. No download direction, no `--bwlimit`, and `-z` is always on. |
+| `get_default_images(gpu_model, driver_version)` | `list[dict]` | The default images the backend offers for a GPU model + driver (`GET /executors/default-docker-image`). |
 
 For directories coming **back**, or for bandwidth-limited / resumable transfers,
 call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_path`
@@ -161,7 +175,7 @@ guaranteed teardown.
 ```python
 import shlex, subprocess, time, uuid
 from datetime import datetime, timedelta, timezone
-from lium.sdk import Lium, LiumError
+from lium.sdk import Lium, LiumError, PodStartError
 
 lium = Lium()
 name = f"job-{uuid.uuid4().hex[:6]}"          # unique: lets you find it in ps() after a timeout
@@ -178,7 +192,11 @@ node = min(nodes, key=lambda e: e.price_per_gpu)
 pod = None
 try:
     created = lium.up(executor_id=node.id, name=name)
-    pod = lium.wait_ready(created, timeout=600)
+    try:
+        pod = lium.wait_ready(created, timeout=600)
+    except PodStartError as exc:                 # FAILED / CREATION_FAILED / vanished: dead, not slow
+        pod = exc.pod                            # may still be listed — the finally removes it
+        raise LiumError(f"pod failed to start: {exc.status}; cause: {exc.cause}") from exc
     if pod is None:                              # still billing — find it and stop it
         pod = next((p for p in lium.ps() if p.name == name), None)
         raise LiumError("pod did not become ready")
@@ -187,8 +205,10 @@ try:
     until = (datetime.now(timezone.utc) + timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
     lium.schedule_termination(pod, termination_time=until)
 
-    # Verify what you pay for: billed count vs devices the container can see
-    billed = pod.executor.gpu_count if pod.executor else None
+    # Verify what you pay for: billed count vs devices the container can see.
+    # pod.gpu_count is the pod row's own count (a GPU-split rental bills a share of
+    # the node); executor.gpu_count is the whole host.
+    billed = pod.gpu_count if pod.gpu_count is not None else (pod.executor.gpu_count if pod.executor else None)
     seen = int(lium.exec(pod, command="nvidia-smi -L | wc -l")["stdout"].strip() or 0)
     if seen != want or (billed is not None and billed != want):
         raise LiumError(f"GPU count mismatch: requested {want}, billed {billed}, visible {seen}")
@@ -204,8 +224,9 @@ try:
         time.sleep(60)
         print(lium.exec(pod, command="tail -n 3 /workspace/logs/train.log")["stdout"])
 
-    # Pull results: rsync back, resumable, no compression for binary output
-    ssh = f"ssh -p {pod.ssh_port} -i {lium.config.ssh_key_path} -o StrictHostKeyChecking=no"
+    # Pull results: rsync back, resumable, no compression for binary output.
+    # ssh_argv() carries -i, -p and the pinned host key; drop the trailing user@host.
+    ssh = shlex.join(lium.ssh_argv(pod)[:-1])
     subprocess.run(["rsync", "-a", "--partial", "--inplace", "--bwlimit=20000", "-e", ssh,
                     f"{pod.username}@{pod.host}:/workspace/out/", "./out/"], check=True)
 finally:
@@ -229,6 +250,8 @@ Notes:
 ## @machine Decorator
 
 Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the result or re-raises the remote exception, removes the pod or keeps it warm.
+
+**On 0.0.37 the decorator takes only `machine`, `template_id`, `cleanup` and `requirements`**, and its `requirements` go into a plain `python3 -m venv` that does **not** see the image's packages — list torch and every other import there; `timeout`, `keep_warm`, `quiet`, `local`, `.map`/`.local`/`.close`, the venv that sees the image's packages and the result/error semantics below are lium#208 (DAH-3014), not released — the example as written raises `TypeError` on 0.0.37.
 
 ```python
 import lium
@@ -254,7 +277,7 @@ run.close()          # remove the warm pod now
 | `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
 | `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
-| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; since 0.0.40, lium#208) |
+| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; lium#208, not released) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
 **On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
@@ -274,7 +297,7 @@ run.close()          # remove the warm pod now
 [lium] run: pod stays warm 300s
 ```
 
-Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires the decorator surface since 0.0.40 (lium#208).
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. **Everything above except `machine`, `template_id`, `cleanup` and `requirements` is lium#208 (DAH-3014), not released**: on 0.0.37 the decorator takes only those four, picks the first node whose name contains `machine` as a substring (`"H200"` — the `"<count>x<gpu>"` form matches nothing there), installs `requirements` into an isolated venv (torch included, if the function needs it), has no `timeout`/`keep_warm`/`local`/`quiet`, no `.map`/`.local`/`.close`, and results must be JSON-serialisable.
 
 
 ---
@@ -303,6 +326,7 @@ Plain dataclasses (`lium.sdk.models`). Convert with `dataclasses.asdict(obj)`.
 | `effective_upload_speed_mbps` / `effective_download_speed_mbps` | `float \| None` | Also as properties `upload_speed` / `download_speed` (0.0 when unknown) |
 | `max_cuda_version` | `float \| None` | Driver's CUDA ceiling, e.g. `13.0` |
 | `tier` | `str \| None` | `"secure"` or `"spot"` (reclaimable) |
+| `available_gpu_count` | `int \| None` | GPUs still free on a node that is partly rented (GPU splitting); `None` when the API did not say |
 
 Properties: `driver_version` (str), `gpu_model` (first GPU's full name from specs).
 
@@ -317,7 +341,9 @@ Properties: `driver_version` (str), `gpu_model` (first GPU's full name from spec
 | `ssh_cmd` | `str \| None` | `ssh root@<host> -p <port>` once ready |
 | `ports` | `dict` | Internal → external port map |
 | `created_at` / `updated_at` | `str` | ISO timestamps |
-| `executor` | `ExecutorInfo \| None` | `executor.gpu_count` is the **billed** GPU count; `executor.price_per_hour` the billed $/h |
+| `executor` | `ExecutorInfo \| None` | The node; `executor.gpu_count` is the **whole host's** GPU count, `executor.price_per_hour` the billed $/h |
+| `gpu_count` | `int \| None` | The **billed** GPU count — the pod row's own `gpu_count` from `/pods` (a GPU-split rental takes a share of the node); `None` on an older backend, fall back to `executor.gpu_count` |
+| `estimated_ready_seconds`, `eta_basis`, `phase` | `int \| None`, `str \| None`, `str \| None` | The backend's readiness estimate while the pod starts; the method `pod.eta_hint()` renders them as one line (`est. ready in ~18 s (phase: pulling image)`), `None` when absent |
 | `template` | `dict` | Raw template payload (`id`, `name`, `docker_image`, `volumes`, …) |
 | `removal_scheduled_at` | `str \| None` | TTL / scheduled termination |
 | `jupyter_installation_status`, `jupyter_url` | `str \| None` | |
@@ -367,10 +393,12 @@ All in `lium.sdk` (and re-exported from `lium`):
 | `LiumAuthError` | 401 — invalid or revoked API key |
 | `LiumPermissionError` | 403 — `Permission denied: Insufficient balance` is the common one |
 | `LiumNotFoundError` | 404 |
-| `LiumRateLimitError` | 429 (retried 3× first) |
-| `LiumServerError` | 5xx (retried 3× first) |
-| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (since 0.0.40, lium#208) |
-| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (since 0.0.40, lium#208) |
+| `LiumRateLimitError` | 429 (retried 3× first for every call except the rent POST inside `up()` and `pod_events()`, which are sent once) |
+| `LiumServerError` | 5xx (retried 3× first for `GET`/`HEAD`/`OPTIONS` and the three `retry=True` POSTs named above; raised at once for any other mutating call) |
+| `PodStartError` | `wait_ready()`: the pod reached a terminal status or vanished; carries `.pod_id`, `.pod`, `.status`, `.history`, `.cause` |
+| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (lium#208) |
+| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (lium#208) |
+| `LiumHostKeyError` | `ssh_connection()` (so `exec()`, `scp()`, …): the pod's SSH host key differs from the one pinned under `~/.lium/known_hosts/<pod id>` (`LIUM_SSH_INSECURE=1` disables the check) |
 
 `ValueError` (not a `LiumError`) is raised for local problems: no API key, no SSH
 key, unknown executor id, conflicting arguments. `RuntimeError` comes from
@@ -381,7 +409,7 @@ The 403 message does not say which key or account was used. When `balance()`
 works but `up()` says `Insufficient balance`, check that both processes resolve
 the same key (`LIUM_API_KEY` beats `~/.lium/config.ini`).
 
-Debugging: `LIUM_DEBUG=1` or
+Debugging: the SDK has no debug switch of its own (`LIUM_DEBUG=1` is read by the CLI's UI only); what remains is
 
 ```python
 import logging
