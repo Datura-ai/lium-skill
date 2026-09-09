@@ -18,9 +18,13 @@ sshinfo() { lium ps "$1" --format json | jq -r '.[0].ssh_cmd | capture("@(?<h>\\
 # Uses $NAME for the cleanup — set it and pass --name "$NAME" (every recipe below does).
 rent() { lium up "$@" -y --no-ssh --verify-gpus --strict-gpus && return 0
   lium ps "$NAME" --format json >/dev/null 2>&1 && lium rm "$NAME" -y; return 1; }
-# Pull a directory from a pod (resumable, throttled, no compression)
-pull() { read -r H P < <(sshinfo "$1"); rsync -a --partial --inplace --info=progress2 --bwlimit="${4:-20000}" \
-  -e "ssh -p $P -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" "root@$H:$2" "$3"; }
+# The pod's ready ssh command from lium ps --format json: -p, the pinned host key (accept-new +
+# ~/.lium/known_hosts/<pod id>) and root@host; only -i is missing
+sshcmd() { lium ps "$1" --format json | jq -r '.[0].ssh_command'; }
+# Pull a directory from a pod (resumable, throttled, no compression): -e is the ssh command
+# without its trailing root@host, plus the key ($HOME, not ~: ssh expands ~ from passwd, not $HOME)
+pull() { local C; C=$(sshcmd "$1"); rsync -a --partial --inplace --info=progress2 --bwlimit="${4:-20000}" \
+  -e "${C% root@*} -i $HOME/.ssh/id_ed25519" "${C##* }:$2" "$3"; }
 ```
 
 ## Table of Contents

@@ -586,9 +586,9 @@ while lium exec "$NAME" "kill -0 $PID" >/dev/null 2>&1; do
 done
 
 # 6. Pull results (no -z for binary output; resumable), then tear down and confirm
-read -r HOST PORT < <(jq -r '.[0].ssh_cmd | capture("@(?<h>\\S+).*-p (?<p>\\d+)") | "\(.h) \(.p)"' pod.json)
-rsync -a --partial --inplace --info=progress2 -e "ssh -p $PORT -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
-  "root@$HOST:/workspace/out/" ./out/
+SSH_COMMAND=$(jq -r '.[0].ssh_command' pod.json)   # ssh -p <port> <pinned host-key options> root@<host>
+rsync -a --partial --inplace --info=progress2 -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+  "${SSH_COMMAND##* }:/workspace/out/" ./out/
 lium rm "$NAME" -y
 lium ps --format json | jq 'length'   # 0 → nothing left billing
 ```
@@ -672,10 +672,12 @@ Observed on the default `daturaai/pytorch` templates (Ubuntu 24.04). Check with
 lium scp "$NAME" ./config.yaml /workspace/config.yaml
 lium rsync "$NAME" ./src /workspace/src
 
-# Download a directory: plain rsync to the pod's SSH endpoint (from lium ps --format json)
+# Download a directory: plain rsync over the pod's ready ssh command (lium ps --format json
+# `ssh_command`: -p, the pinned host key, root@host; add -i, drop the trailing root@host for -e)
+SSH_COMMAND=$(lium ps "$NAME" --format json | jq -r '.[0].ssh_command')
 rsync -a --partial --inplace --info=progress2 --bwlimit=20000 \
-  -e "ssh -p $PORT -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" \
-  "root@$HOST:/workspace/out/" ./out/
+  -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+  "${SSH_COMMAND##* }:/workspace/out/" ./out/
 ```
 
 - `--partial --inplace` makes a dropped transfer resumable; `--bwlimit` (KB/s)
@@ -695,7 +697,7 @@ read -r DHOST DPORT < <(lium ps "$DST" --format json | jq -r '.[0].ssh_cmd | cap
 PUB=$(lium exec "$SRC" --json "test -f ~/.ssh/id_p2p || ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_p2p; cat ~/.ssh/id_p2p.pub" | jq -r '.results[0].stdout' | tr -d '\n')
 lium exec "$DST" "mkdir -p ~/.ssh && grep -qxF '$PUB' ~/.ssh/authorized_keys 2>/dev/null || echo '$PUB' >> ~/.ssh/authorized_keys"
 # the copy itself (detach it like any long job when it is large)
-lium exec "$SRC" "rsync -a --partial --inplace -e 'ssh -p $DPORT -i ~/.ssh/id_p2p -o StrictHostKeyChecking=no' /workspace/out/ root@$DHOST:/workspace/in/"
+lium exec "$SRC" "rsync -a --partial --inplace -e 'ssh -p $DPORT -i ~/.ssh/id_p2p -o StrictHostKeyChecking=accept-new' /workspace/out/ root@$DHOST:/workspace/in/"
 ```
 
 ### Watch the GPUs
