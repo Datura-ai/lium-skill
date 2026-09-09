@@ -271,9 +271,13 @@ For fallback options, the user must get an API key from https://lium.io Account 
 ### Verify Setup
 
 ```bash
-lium config show   # check stored config
-lium balance       # prints a balance -> auth works
+lium balance       # prints a balance -> auth works; an error -> it does not
 ```
+
+Do not run `lium config show` (or `lium config get api.api_key`) to check the setup: both
+print the API key in full, and anything an agent prints ends up in its transcript and logs.
+`lium balance` proves the key works without ever showing it. If you must confirm where the key
+is stored, check that `~/.lium/config.ini` exists.
 
 ### Non-Interactive Pod Creation
 
@@ -366,9 +370,10 @@ User must have a verified Bittensor wallet at https://lium.io/billing.
 export PATH="$HOME/.lium/bin:$PATH"  # needed in current shell session
 ```
 
-#### After `lium init --session` — Verify with `lium ls`
+#### After `lium init --session` — Verify with `lium balance`
 
-After completing the two-step auth, run `lium ls` to verify. If it returns results, auth is done.
+After completing the two-step auth, run `lium balance`. A balance means auth is done; `lium ls`
+is not a check — it lists nodes with a wrong key too (see below).
 
 #### An Error Does Not Always Mean a Non-Zero Exit
 
@@ -572,6 +577,13 @@ Always use `--format json` when parsing output programmatically:
 lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 lium ps --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 ```
+
+Never read node ids or prices off the `lium ls` table. When stdout is not a terminal the table
+is rendered 80 columns wide, and at that width it has no **Id** column, no row index, and the
+price cell is truncated to `0…`; the Id and Location columns only appear from about 130
+columns. The JSON has every field: `id` (UUID — what `lium up` accepts), `huid` (the short
+name the table shows; not accepted by `lium up` in 0.0.33), `price_per_hour`,
+`price_per_gpu_hour`, `gpu_count`, `download_mbps`, `upload_mbps`, `country`.
 
 `--format [table|json]` exists on `lium ls` and `lium ps`. `--json` — a plain flag,
 not a format choice — is taken by `lium exec`, `lium fund`, `lium balance`,
