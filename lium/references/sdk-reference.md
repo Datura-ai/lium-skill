@@ -169,28 +169,54 @@ lium.down(pod)
 
 ## @machine Decorator
 
-Simplest way to run code on a remote GPU. Automatically provisions, uploads, executes, returns result, and cleans up.
+Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the result or re-raises the remote exception, removes the pod or keeps it warm.
 
 ```python
-from lium.sdk import machine
+import lium
 
-@machine(machine="A100", requirements=["torch", "transformers"])
-def train_model(prompt: str) -> str:
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-    model = AutoModelForCausalLM.from_pretrained("gpt2")
-    # ... your code runs on remote A100
-    return result
+@lium.machine(machine="1xH200", requirements=["transformers", "accelerate"], timeout=900, keep_warm=300)
+def run(model_name: str, prompt: str) -> str:
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    tok = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.bfloat16, device_map="cuda")
+    ids = tok(prompt, return_tensors="pt").to("cuda")
+    return tok.decode(model.generate(**ids, max_new_tokens=64)[0], skip_special_tokens=True)
 
-result = train_model("Your prompt")
+answer = run("Qwen/Qwen2.5-0.5B-Instruct", "What is the capital of France?")
+run.close()          # remove the warm pod now
 ```
 
 **Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `machine` | str | GPU type: `"A100"`, `"1xH200"`, `"2xA100"` |
-| `template_id` | str, optional | Docker template to use |
-| `cleanup` | bool, default True | Delete pod after execution |
-| `requirements` | list, optional | Pip packages to install before running |
+| `machine` | str | `"<count>x<gpu>"` or `"<gpu>"`: `"1xH200"`, `"RTX4090"`, `"2xA100"`. Count defaults to 1. Cheapest matching node is rented. |
+| `requirements` | list, optional | pip packages, installed once per pod into a venv that also sees the image's packages |
+| `template_id` | str, optional | Docker template to rent with (default: the node's default template) |
+| `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
+| `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
+| `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
+| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; since 0.0.40, lium#208) |
+| `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
+
+**On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
+
+**What travels:** only the function's own `def` (decorators/annotations stripped) plus pickled arguments (your bytes, loaded on your pod). The result is not pickled: it comes back as a JSON envelope plus an `.npz` sidecar for numpy arrays, read with `allow_pickle=False`. What round-trips, each as its own type: `None`, `bool`, `int`, `float`, `str`, `bytes`; `list`, `tuple`, `set`, `frozenset`, `dict` of those, nested; `datetime`/`date`/`time`/`timedelta`, `Decimal`, `pathlib.Path`, `uuid.UUID`; `numpy.ndarray` (any dtype without Python objects) and numpy scalars. Anything else — a tensor, `torch.__version__`, a dataclass, an `Enum` — is a `lium.ResultEncodingError` raised on the pod naming the type; return `str(...)`, `.tolist()`, `.cpu().numpy()`, `dict(x)` instead. Import inside the body; a closure variable or a module-level name used inside is refused when the function is decorated (`LiumError` naming it). Nested functions and `async def` work; lambdas do not, and a method's `self` is pickled by reference, so it works only when its class is importable on the pod (not a class defined in the script).
+
+**Errors:** a remote exception of a builtin type (`ValueError`, `RuntimeError`, …) is re-raised with its own type and `e.__cause__` is `lium.RemoteExecutionError` with `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; any other class (`torch.OutOfMemoryError`, …) arrives as `RemoteExecutionError` itself, its name in `exception_type`, no `__cause__`. Timeout → `RemoteExecutionError: <fn> exceeded timeout=Ns and was killed`, no `__cause__`; no matching node or a failed rental → `LiumError`. Prints from the pod appear on the caller's terminal while the function runs.
+
+**Progress lines (stderr):**
+```
+[lium] run: renting 1xH200 $2.75/h (swift-fox-c8, United States), removal in 0.6h
+[lium] run: pod ready in 45s
+[lium] run: preparing environment (2 package(s): transformers, accelerate)
+[lium] run: environment ready in 31s
+[lium] run: running
+[lium] run: done in 118s (~$0.0901)
+[lium] run: pod stays warm 300s
+```
+
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires the decorator surface since 0.0.40 (lium#208).
 
 ---
 
@@ -354,6 +380,9 @@ High-level SDK (`lium.sdk`):
 | `LiumNotFoundError` | Resource not found (404) |
 | `LiumRateLimitError` | Rate limit exceeded (429) |
 | `LiumServerError` | Server errors (5xx) |
+| `PodStartError` | the pod reached a terminal state (`FAILED`, `STOPPED`, gone) while being waited for; a slow pod is `None`, not this (since 0.0.37) |
+| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (since 0.0.40, lium#208) |
+| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (since 0.0.40, lium#208) |
 
 Enable debug logging:
 ```python
