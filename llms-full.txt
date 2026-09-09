@@ -296,6 +296,8 @@ lium up --gpu A6000 --image pytorch/pytorch:2.0 -y    # custom docker image (str
 lium up --gpu H100 --jupyter -y --no-ssh              # with Jupyter
 ```
 
+Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and, coming with lium#209 — not in 0.0.37, the latest release — `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK) **picks a matching node and rents it in one call**. The backend route that picks the cheapest is live (`GET /version` lists `rent_by_spec`); the released client 0.0.37 does not call it yet and picks locally (the first Pareto-optimal row of `ls()`, not the cheapest) — lium#209 makes `lium up --gpu` and `Lium.rent` use it. Do not `lium ls` first and rent the first row yourself: it is neither the cheapest nor guaranteed still free. On the 0.0.37 SDK, which has no `rent()`, `ls()` + `up(executor_id=)` is the only path — pick by `price_per_hour`, not the first row (example in `references/sdk-reference.md`).
+
 ### Non-Interactive Funding
 
 ```bash
@@ -1315,7 +1317,8 @@ it has to be `lium.exec(pod, command="nvidia-smi")`.
 
 | Method | Description |
 |--------|-------------|
-| `up(*, executor_id, name=, template_id=, volume_id=, ports=, ssh_keys=)` | Create pod |
+| `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | **Coming with lium#209 — not in 0.0.37, the latest release** (`pip show lium.io`; until it ships use `ls()` + `up(executor_id=)` below). Rent the cheapest node matching a spec in one call (the backend picks when `GET /version` lists `rent_by_spec` — production does today; against an older backend the client picks the cheapest exact match; `dry_run=True` prices without renting). Returns `RentResult` with `.pod`, `.executor`, `.price_per_hour` |
+| `up(*, executor_id, name=, template_id=, volume_id=, ports=, ssh_keys=)` | Create pod on a named node |
 | `down(pod)` | Stop/delete pod |
 | `rm(pod)` | Alias for `down()` |
 | `reboot(pod, volume_id=)` | Reboot pod |
@@ -1402,10 +1405,13 @@ from lium.sdk import Lium
 
 lium = Lium()
 
-# Find and create
+# lium.io 0.0.37 (the latest release): list, pick the cheapest 8xA100 yourself, rent it by id
 executors = lium.ls(gpu_type="A100", gpu_count=8)
-pod = lium.up(executor_id=executors[0].id, name="my-pod")
-pod = lium.wait_ready(pod, timeout=600)
+cheapest = min(executors, key=lambda e: e.price_per_hour)
+pod = lium.wait_ready(lium.up(executor_id=cheapest.id, name="my-pod"), timeout=600)
+# Coming with lium#209 (not in 0.0.37): the same in one call, no listing
+#   rented = lium.rent(gpu_type="A100", gpu_count=8, min_cpus=32, name="my-pod")
+#   pod = lium.wait_ready(rented.pod, timeout=600)
 
 # Execute
 result = lium.exec(pod, command="nvidia-smi")
