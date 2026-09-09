@@ -196,12 +196,12 @@ run.close()          # remove the warm pod now
 | `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
 | `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
-| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; release after 0.0.33) |
+| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; lium#208, not in 0.0.37) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
 **On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
 
-**What travels:** only the function's own `def` (decorators/annotations stripped) plus pickled arguments (your bytes, loaded on your pod). The result is not pickled: it comes back as a JSON envelope plus an `.npz` sidecar for numpy arrays, read with `allow_pickle=False`. What round-trips, each as its own type: `None`, `bool`, `int`, `float`, `str`, `bytes`; `list`, `tuple`, `set`, `frozenset`, `dict` of those, nested; `datetime`/`date`/`time`/`timedelta`, `Decimal`, `pathlib.Path`, `uuid.UUID`; `numpy.ndarray` (any dtype without Python objects) and numpy scalars. Anything else — a tensor, `torch.__version__`, a dataclass, an `Enum` — is a `lium.ResultEncodingError` raised on the pod naming the type; return `str(...)`, `.tolist()`, `.cpu().numpy()`, `dict(x)` instead. Import inside the body; a closure variable or a module-level name used inside is refused when the function is decorated (`LiumError` naming it). Methods, nested functions and `async def` work; lambdas do not.
+**What travels:** only the function's own `def` (decorators/annotations stripped) plus pickled arguments (your bytes, loaded on your pod). The result is not pickled: it comes back as a JSON envelope plus an `.npz` sidecar for numpy arrays, read with `allow_pickle=False`. What round-trips, each as its own type: `None`, `bool`, `int`, `float`, `str`, `bytes`; `list`, `tuple`, `set`, `frozenset`, `dict` of those, nested; `datetime`/`date`/`time`/`timedelta`, `Decimal`, `pathlib.Path`, `uuid.UUID`; `numpy.ndarray` (any dtype without Python objects) and numpy scalars. Anything else — a tensor, `torch.__version__`, a dataclass, an `Enum` — is a `lium.ResultEncodingError` raised on the pod naming the type; return `str(...)`, `.tolist()`, `.cpu().numpy()`, `dict(x)` instead. Import inside the body; a closure variable or a module-level name used inside is refused when the function is decorated (`LiumError` naming it). Nested functions and `async def` work; lambdas do not, and a method's `self` is pickled by reference, so it works only when its class is importable on the pod (not a class defined in the script).
 
 **Errors:** a remote exception of a builtin type (`ValueError`, `RuntimeError`, …) is re-raised with its own type and `e.__cause__` is `lium.RemoteExecutionError` with `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; any other class (`torch.OutOfMemoryError`, …) arrives as `RemoteExecutionError` itself, its name in `exception_type`, no `__cause__`. Timeout → `RemoteExecutionError: <fn> exceeded timeout=Ns and was killed`, no `__cause__`; no matching node or a failed rental → `LiumError`. Prints from the pod appear on the caller's terminal while the function runs.
 
@@ -216,7 +216,7 @@ run.close()          # remove the warm pod now
 [lium] run: pod stays warm 300s
 ```
 
-Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires the `lium` release after 0.0.33.
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires lium#208 (not in 0.0.37, the latest release).
 
 ---
 
@@ -380,6 +380,9 @@ High-level SDK (`lium.sdk`):
 | `LiumNotFoundError` | Resource not found (404) |
 | `LiumRateLimitError` | Rate limit exceeded (429) |
 | `LiumServerError` | Server errors (5xx) |
+| `PodStartError` | the pod reached a terminal state (`FAILED`, `STOPPED`, gone) while being waited for; a slow pod is `None`, not this (since 0.0.37) |
+| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (lium#208) |
+| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (lium#208) |
 
 Enable debug logging:
 ```python
