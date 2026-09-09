@@ -557,13 +557,17 @@ NAME=job-$(date +%s)
 lium ls --gpu H200 --count 8 --format json \
   | jq -r 'map(select(.tier=="secure")) | sort_by(.price_per_gpu_hour) | .[0] | "\(.huid) \(.config) $\(.price_per_hour)/h \(.country)"'
 
-# 2. Rent, non-interactively, with a TTL; --no-ssh returns as soon as the pod is RUNNING
-lium up --gpu H200 -c 8 --name "$NAME" --ttl 6h -y --no-ssh || exit 1
+# 2. Rent, non-interactively, with a TTL; --no-ssh returns as soon as the pod is RUNNING.
+#    --verify-gpus --strict-gpus removes the pod when its GPU count is not the one you asked for.
+#    The pod bills from the moment the rent is accepted: when up fails later (pod_not_ready
+#    after --timeout, an SSH check that could not run), the pod is still there — remove it.
+lium up --gpu H200 -c 8 --name "$NAME" --ttl 6h -y --no-ssh --verify-gpus --strict-gpus \
+  || { lium ps "$NAME" --format json >/dev/null 2>&1 && lium rm "$NAME" -y; exit 1; }
 
-# 3. Read the pod record (up prints no JSON) and verify what you pay for
+# 3. Read the pod record (up prints no JSON) and keep the evidence of what you pay for
 lium ps "$NAME" --format json > pod.json
 BILLED=$(jq -r '.[0].gpu_count' pod.json)
-SEEN=$(lium exec "$NAME" --json "nvidia-smi -L | wc -l" | jq -r '.results[0].stdout | tonumber')
+SEEN=$(lium exec "$NAME" --json "nvidia-smi -L" | jq -r '.results[0].stdout' | grep -c '^GPU ' || true)
 [ "$SEEN" = "8" ] && [ "$BILLED" = "8" ] || { echo "GPU count mismatch: asked 8, billed $BILLED, visible $SEEN"; lium rm "$NAME" -y; exit 1; }
 
 # 4. Prepare the pod (fast path, tools, venv) — one --script exec; stdin is NOT forwarded
@@ -578,7 +582,7 @@ lium exec "$NAME" --script setup.sh
 
 # 5. Start the job detached (capture the PID from --json), then poll
 lium scp "$NAME" ./train.py /workspace/train.py
-PID=$(lium exec "$NAME" --json "cd /workspace && HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid /workspace/venv/bin/python train.py > /workspace/logs/train.log 2>&1 < /dev/null & echo \$!" | jq -r '.results[0].stdout | tonumber')
+PID=$(lium exec "$NAME" --json "cd /workspace && HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid /workspace/venv/bin/python train.py > /workspace/logs/train.log 2>&1 < /dev/null & echo \$!" | jq -r '.results[0].stdout' | tr -d '[:space:]')
 while lium exec "$NAME" "kill -0 $PID" >/dev/null 2>&1; do
   lium exec "$NAME" "tail -n 2 /workspace/logs/train.log"; sleep 60
 done
@@ -595,14 +599,19 @@ lium ps --format json | jq 'length'   # 0 → nothing left billing
 quoting games, and the script's exit code comes back. (`lium exec <pod> "bash -s"
 < setup.sh` does **not** work — local stdin is never forwarded.) Capture remote
 output with `--json | jq -r '.results[0].stdout'`; the human format prints an
-`Executing on …` line on stdout first.
+`Executing on …` line on stdout first. The `stdout` field keeps its trailing
+newline: strip it (`tr -d '[:space:]'`, or `grep -c` as above) before comparing
+it or feeding it to `jq`'s `tonumber`, which rejects `"8\n"`.
 
 ### Verify What You Paid For
 
 Two failure modes were seen repeatedly on 4- and 8-GPU rentals: the platform
 provisions a **1-GPU pod** when the requested count is unavailable (silent
 downgrade), and a pod is **billed for N GPUs but the container exposes fewer**
-(phantom GPUs). Neither shows up as an error. Check, every time, right after `up`:
+(phantom GPUs). Neither shows up as an error. `lium up --verify-gpus` counts the
+GPUs over SSH after the pod is ready and exits 1 on a mismatch; with
+`--strict-gpus` it also removes the pod. Keep the evidence yourself, every time,
+right after `up`:
 
 ```bash
 lium ps "$NAME" --format json | jq '.[0] | {gpu_count, price_per_hour, config}'   # what you are billed for
@@ -612,8 +621,9 @@ lium exec "$NAME" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheade
 
 If either number is below what you asked for, `lium rm` the pod immediately and
 rent again (another executor: pass its `id` from `lium ls --format json` as
-`NODE_ID`; 0.0.33 rejects the HUID). Keep the `nvidia-smi -L` output; it is the
-evidence for a refund.
+`NODE_ID`; the released CLI, 0.0.37 and earlier, rejects the HUID — lium#153, not
+released, changes that). Keep the `nvidia-smi -L` output; it is the evidence for
+a refund.
 
 ### Pod Gotchas — The First Hour
 
@@ -714,7 +724,8 @@ bill grows.
   what is scheduled with `lium schedules list`.
 - **Check the meter**: `lium ps --format json | jq '.[] | {name, price_per_hour, spent_usd, uptime}'`
   — `spent_usd` is uptime × price, computed client-side. Multi-GPU nodes are
-  billed for the whole node from the moment `up` returns, including setup time.
+  billed for the whole node from the moment the rent is accepted — before `up`
+  returns — including the image pull, the readiness wait and your setup time.
 - **Never keep an 8-GPU node for CPU work.** Downloads, preprocessing, video
   encoding, editing and uploads belong on the cheapest node in `lium ls`
   (`--sort price_per_hour --limit 5`) or on your own machine. Copy pod-to-pod,
@@ -734,15 +745,15 @@ Copy-paste jobs, each ending in a teardown, in
 best-of-N image/video diffusion with one process per GPU, RL / simulation,
 a batch data job, and the "verify what you paid for" check as a script.
 
-### Only What 0.0.33 Has
+### Only What the Released CLI Has
 
-This skill describes CLI 0.0.33 and nothing that is not released; probe with
-`lium <cmd> --help` before relying on a flag you do not see here.
+This skill describes the released CLI (0.0.37) and nothing that is not released;
+probe with `lium <cmd> --help` before relying on a flag you do not see here.
 
-- Verify the GPU count yourself: `nvidia-smi -L | wc -l` inside the pod against `gpu_count` from `lium ps --format json`.
+- GPU count: `lium up --verify-gpus --strict-gpus` is the built-in check; `nvidia-smi -L` inside the pod against `gpu_count` from `lium ps --format json` is the evidence you keep.
 - Detach long jobs by hand: `nohup setsid ... > log 2>&1 < /dev/null &` through `lium exec`.
 - Template ids: `curl .../api/templates` or `Lium().templates()`.
-- Machine-readable output: `--format json` on `ps`/`ls`, `--json` on `balance`/`exec`/`describe`.
+- Machine-readable output: `--format json` on `ps`/`ls`, `--json` on `balance`/`exec`/`describe`/`audit`. `lium ps --format json` carries `ssh_command` ready to run, next to the `ssh_cmd` the one-liners above parse.
 - A 401/403 means the wrong key: check `LIUM_API_KEY` against `~/.lium/config.ini` yourself.
 - Never wait for a prompt: pass `-y`, `--no-ssh` and every argument up front.
 - SDK: see the SDK reference's agent recipe for `up` → `wait_ready` → `exec` → `down`.
@@ -2213,7 +2224,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Lium Recipes for Agents
 
-Copy-paste jobs against lium CLI 0.0.33. Each one follows the playbook in
+Copy-paste jobs against the released lium CLI (0.0.37). Each one follows the playbook in
 `SKILL.md`: unique name, `--ttl`, GPU-count check, `/workspace` for everything,
 detached work, results pulled with `rsync`, and a teardown that is confirmed with
 `lium ps`. Replace the GPU type, count and model to taste. All of them assume
@@ -2226,6 +2237,11 @@ Shared helpers used below:
 rexec() { lium exec "$1" --json "$2" | jq -r '.results[0].stdout'; }
 # Host and port of a pod's SSH endpoint
 sshinfo() { lium ps "$1" --format json | jq -r '.[0].ssh_cmd | capture("@(?<h>\\S+).*-p (?<p>\\d+)") | "\(.h) \(.p)"'; }
+# Rent with the built-in GPU check; when up fails after the rent was accepted (pod_not_ready
+# after --timeout, a check that could not run), remove the pod so nothing keeps billing.
+# Uses $NAME for the cleanup — set it and pass --name "$NAME" (every recipe below does).
+rent() { lium up "$@" -y --no-ssh --verify-gpus --strict-gpus && return 0
+  lium ps "$NAME" --format json >/dev/null 2>&1 && lium rm "$NAME" -y; return 1; }
 # Pull a directory from a pod (resumable, throttled, no compression)
 pull() { read -r H P < <(sshinfo "$1"); rsync -a --partial --inplace --info=progress2 --bwlimit="${4:-20000}" \
   -e "ssh -p $P -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no" "root@$H:$2" "$3"; }
@@ -2243,7 +2259,7 @@ pull() { read -r H P < <(sshinfo "$1"); rsync -a --partial --inplace --info=prog
 ## Verify what you paid for
 
 Run this immediately after every `lium up`. It fails (and removes the pod) when
-the billed GPU count or the visible GPU count is below what was requested.
+the billed GPU count or the visible GPU count is not the requested count.
 
 ```bash
 #!/usr/bin/env bash
@@ -2264,8 +2280,8 @@ fi
 ```
 
 If it fails, rent again on a **different** executor: pick the `id` (the UUID;
-0.0.33 rejects the HUID) from `lium ls --gpu <type> --count <n> --format json`
-and pass it as `NODE_ID` (`lium up <id> --name ... --ttl ... -y --no-ssh`).
+the released CLI rejects the HUID) from `lium ls --gpu <type> --count <n> --format json`
+and pass it first (`rent <id> --name ... --ttl ...`; the helper forwards it to `lium up`).
 Keep the two JSON files.
 
 ## LLM serving on 8 GPUs (vLLM or SGLang)
@@ -2277,7 +2293,7 @@ before that.
 
 ```bash
 NAME=serve-$(date +%s); MODEL=Qwen/Qwen2.5-72B-Instruct; WANT=8
-lium up --gpu H200 -c $WANT --name "$NAME" --ttl 8h -y --no-ssh
+rent --gpu H200 -c $WANT --name "$NAME" --ttl 8h || exit 1
 ./verify_gpus.sh "$NAME" $WANT
 
 cat > setup.sh <<'EOF'
@@ -2328,7 +2344,7 @@ tear down. Editing, upscaling and encoding happen on a cheap pod or locally.
 
 ```bash
 NAME=gen-$(date +%s); WANT=8
-lium up --gpu H200 -c $WANT --name "$NAME" --ttl 4h -y --no-ssh
+rent --gpu H200 -c $WANT --name "$NAME" --ttl 4h || exit 1
 ./verify_gpus.sh "$NAME" $WANT
 
 cat > setup.sh <<'EOF'
@@ -2372,14 +2388,14 @@ H100/H200; on Blackwell rely on SDPA/cuDNN attention.
 ## RL / simulation
 
 Environment stepping is CPU-bound and the policy update is GPU-bound: use one
-GPU, many CPU cores (`ram_gb`/CPU count are in `lium ls --format json`), and
+GPU, plenty of RAM (`ram_gb` is in `lium ls --format json`; the CLI shows no CPU count — read `nproc` on the pod right after `up`), and
 checkpoint to `/workspace` every few minutes because container restarts kill
 processes but keep `/workspace`.
 
 ```bash
 NAME=rl-$(date +%s)
 lium ls --gpu H100 --count 1 --format json | jq -r 'sort_by(.price_per_hour) | .[0:5][] | "\(.huid) \(.ram_gb)GB RAM $\(.price_per_hour)/h \(.country)"'
-lium up --gpu H100 -c 1 --name "$NAME" --ttl 12h -y --no-ssh
+rent --gpu H100 -c 1 --name "$NAME" --ttl 12h || exit 1
 ./verify_gpus.sh "$NAME" 1
 
 cat > setup.sh <<'EOF'
@@ -2419,7 +2435,7 @@ an idle 8-GPU node hurts most.
 
 ```bash
 NAME=batch-$(date +%s); WANT=2
-lium up --gpu RTX4090 -c $WANT --name "$NAME" --ttl 6h -y --no-ssh
+rent --gpu RTX4090 -c $WANT --name "$NAME" --ttl 6h || exit 1
 ./verify_gpus.sh "$NAME" $WANT
 
 cat > setup.sh <<'EOF'
