@@ -173,6 +173,12 @@ lium ls --format json           # JSON output for parsing
 lium ls --sort price_per_gpu_hour --limit 10
 ```
 
+The table and JSON carry no interconnect field and the `download_mbps` / `upload_mbps`
+figures are smoothed speed-test probes, not CDN throughput. Before a tensor-parallel or
+weight-heavy job on a multi-GPU node, verify on the pod: `nvidia-smi topo -m` (all
+off-diagonal GPU cells `NV#`), `nvidia-smi topo -p2p r` (all `OK`) and a timed download —
+see "Before You Rent 8 GPUs" in SKILL.md.
+
 ## lium up
 
 Create a new pod. **Always pass `-y` for non-interactive (agent) usage.**
