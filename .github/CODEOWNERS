@@ -4,6 +4,7 @@
 # lines marked "TODO owner: confirm" are the ones where the evidence is thin or disagrees with the reviewer map.
 # How reviews work here: .github/REVIEWING.md
 
-# arhangel66 is the only author on every path (16 skill commits, 7 llms.txt); taiberium the only approver (3)
-# TODO owner: confirm — backup: taiberium approved 3 of 6 merged PRs; confirm
+# arhangel66 is the only human author on every path (16 skill commits, 7 llms.txt, to 7 Sep); the other commits are the
+# loop's (surcyf123). Approvals on merged PRs: taiberium 3 of the 7 merged to 7 Sep (#3 #8 #9), arhangel66 the loop PRs since (#20 #22).
+# TODO owner: confirm — backup: taiberium's 3 approvals are the only evidence for the second name; confirm
 *                                           @arhangel66 @taiberium
