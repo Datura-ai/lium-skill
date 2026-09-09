@@ -196,7 +196,7 @@ run.close()          # remove the warm pod now
 | `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
 | `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
-| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; lium#208, not in 0.0.37) |
+| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; since 0.0.40, lium#208) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
 **On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
@@ -216,7 +216,7 @@ run.close()          # remove the warm pod now
 [lium] run: pod stays warm 300s
 ```
 
-Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires lium#208 (not in 0.0.37, the latest release).
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. Requires the decorator surface since 0.0.40 (lium#208).
 
 ---
 
@@ -381,8 +381,8 @@ High-level SDK (`lium.sdk`):
 | `LiumRateLimitError` | Rate limit exceeded (429) |
 | `LiumServerError` | Server errors (5xx) |
 | `PodStartError` | the pod reached a terminal state (`FAILED`, `STOPPED`, gone) while being waited for; a slow pod is `None`, not this (since 0.0.37) |
-| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (lium#208) |
-| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (lium#208) |
+| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (since 0.0.40, lium#208) |
+| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (since 0.0.40, lium#208) |
 
 Enable debug logging:
 ```python
