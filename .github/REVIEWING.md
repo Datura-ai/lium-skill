@@ -1,15 +1,17 @@
 # Reviewing pull requests in `lium-skill`
 
-`.github/CODEOWNERS` names who is asked to review each path (primary first, backup second). This page says how fast,
-what may merge on one approval, how stacked PRs are handled, and how PRs opened by the Lium loop are treated.
+`.github/CODEOWNERS` names the one person asked to review each path; the backup is a comment there, never a second
+reviewer on a PR. This page says how fast, what may merge on one approval, how stacked PRs are handled, and how PRs
+opened by the Lium loop are treated.
 Ticket: [DAH-3022](https://app.notion.com/p/CODEOWNERS-review-SLA-across-repos-3d3b8bfdbde981d6b409f8a90f24d530).
 
 ## 1. Response time
 
 - A code owner answers a review request within **1 business day**: approve, request changes, or say when they will look.
 - **P0** (`[P0]` in the title or the `P0` label): **same day**.
-- Either owner on the CODEOWNERS line may answer; the backup picks it up when the primary is out. The author does not
-  ping a third person unless both owners are unavailable.
+- **One reviewer per PR.** The owner on the CODEOWNERS line is the only person requested. When the owner is out, the
+  author removes the request and asks the backup named in the CODEOWNERS comment — never both at once, and never a
+  third person.
 
 ## 2. What may merge after ONE approval and green required checks
 
@@ -24,7 +26,8 @@ auto-merge disabled), and nobody waits for a second opinion:
 - **(b) Provably dead code** — the PR body shows the identical test run before and after (same passed/skipped counts)
   and a repository-wide search for every removed symbol with zero remaining references.
 - **(c) Dependency bumps** — only the manifest and lock file change and CI passes.
-- **(d) CI-only workflow changes** — `.github/workflows/**` only, approved by an infra owner (@arhangel66 / @taiberium).
+- **(d) CI-only workflow changes** — `.github/workflows/**` only, approved by the owner (@arhangel66; @taiberium when
+  he is out).
 
 Everything else needs the same single approval, but the approver reads the change and the Verification section, and
 the author waits for it — no auto-merge on runtime behaviour.

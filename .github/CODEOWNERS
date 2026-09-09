@@ -1,10 +1,11 @@
 # Code owners — GitHub requests a review from the people on the LAST matching line when a PR touches the path.
-# Two owners per path so one absence does not block; one approval satisfies the branch rule.
-# Proposal from 180-day commit/line evidence per path and 90-day merged-PR review data (DAH-3022);
-# lines marked "TODO owner: confirm" are the ones where the evidence is thin or disagrees with the reviewer map.
+# ONE owner per path (arhangel66, 9 Sep: "one reviewer per pr"): every PR asks exactly one person; one approval
+# satisfies the branch rule. The backup is not on the line — the author asks them by hand when the owner is away
+# (.github/REVIEWING.md §1), so no PR ever pings two people.
+# Proposal from 180-day commit/line evidence per path and 90-day merged-PR review data (DAH-3022).
 # How reviews work here: .github/REVIEWING.md
 
 # arhangel66 is the only human author on every path (16 skill commits, 7 llms.txt, to 7 Sep); the other commits are the
 # loop's (surcyf123). Approvals on merged PRs: taiberium 3 of the 7 merged to 7 Sep (#3 #8 #9), arhangel66 the loop PRs since (#20 #22).
-# TODO owner: confirm — backup: taiberium's 3 approvals are the only evidence for the second name; confirm
-*                                           @arhangel66 @taiberium
+# Backup (not requested automatically): taiberium — TODO owner: confirm; his 3 approvals are the only evidence.
+*                                           @arhangel66
