@@ -575,9 +575,9 @@ lium templates [SEARCH]
 ```
 
 **Notes**:
-- The table shows Name / Image / Tag / Type / Status — **no template id** and no
-  `--format json` in 0.0.37 (lium#217, not released). To get an id for `lium up -t`, read the API
-  directly (the same key the CLI uses):
+- The table shows Name / Image / Tag / Type / Status — **no template id**. Since 0.0.39
+  (lium#217) `lium templates --format json` (alias `--json`) prints the ids; on 0.0.37/0.0.38, to get
+  an id for `lium up -t`, read the API directly (the same key the CLI uses):
   ```bash
   curl -s https://lium.io/api/templates -H "X-API-Key: $LIUM_API_KEY" \
     | jq -r '.[] | "\(.id)  \(.docker_image):\(.docker_image_tag)  \(.name)"'

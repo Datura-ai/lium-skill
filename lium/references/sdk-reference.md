@@ -92,7 +92,7 @@ retrying yourself.
 
 | Method | Returns | Notes |
 |--------|---------|-------|
-| `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | `RentResult` | **Coming with lium#209 — not in 0.0.37, the latest release** (`pip show lium.io`; until it ships use `ls()` + `up(executor_id=)` below). Rent the cheapest node matching a spec in one call (the backend picks when `GET /version` lists `rent_by_spec` — production does today; against an older backend the client picks the cheapest exact match; `dry_run=True` prices without renting). `.pod`, `.executor`, `.price_per_hour`. |
+| `rent(*, gpu_type, gpu_count=1, name=, template_id=, min_vram_gb=, min_cpus=, min_ram_gb=, min_disk_gb=, min_download_mbps=, max_price_per_gpu_hour=, country=, dry_run=)` | `RentResult` | **Since 0.0.39 (lium#209)** — on 0.0.37/0.0.38 (`pip show lium.io`) use `ls()` + `up(executor_id=)` below. Rent the cheapest node matching a spec in one call (the backend picks when `GET /version` lists `rent_by_spec` — production does today; against an older backend the client picks the cheapest exact match; `dry_run=True` prices without renting). `.pod`, `.executor`, `.price_per_hour`. |
 | `up(*, executor_id, name="Your Pod", template_id=None, dockerfile_content=None, volume_id=None, ports=None, ssh_keys=None, ssh_name=None, enable_volume_encryption=True, backup_id=None, restore_path=None)` | `dict` | Raw rent response (`id`, `pod_name`, `status`, …). **Not** a `PodInfo` — pass it to `wait_ready`. Registers your SSH public key server-side first. `template_id` and `dockerfile_content` are mutually exclusive; `backup_id`/`restore_path` go together. Raises `ValueError` for an unknown executor or when no SSH key is found. |
 | `wait_ready(pod, *, timeout=300, poll_interval=None, on_poll=None)` | `PodInfo \| None` | `pod` may be an id string, a `PodInfo` or the dict from `up()`. Polls `ps()` until `status == "RUNNING"` and `ssh_cmd` is set — every 2 s for the first 90 s, then every 10 s (`poll_interval` fixes the interval; `on_poll(pod, status, elapsed)` is called after each poll). **Returns `None` on timeout** (`timeout=None` waits until ready or failed) — the pod may still be provisioning and billing; check `ps()` and `down()` it. **Raises `PodStartError`** when the pod reaches `FAILED`, `CREATION_FAILED`, `STOPPED`, `BROKEN`, … , vanishes after being listed, or is still not listed 20 s after the first poll; the error carries `.pod`, `.status`, `.history` and `.cause` (the backend's reason). |
 | `refresh_pod(pod)` | `PodInfo` | Re-read one pod (`pod` may be an id or a `PodInfo`); `LiumNotFoundError` when it is gone. |
@@ -185,7 +185,7 @@ nodes = [e for e in lium.ls(gpu_type="H200", gpu_count=want) if e.tier != "spot"
 if not nodes:
     raise SystemExit("no matching node")
 node = min(nodes, key=lambda e: e.price_per_gpu)
-# Coming with lium#209 (not in 0.0.37): the same in one call, no listing
+# Since 0.0.39 (lium#209): the same in one call, no listing
 #   rented = lium.rent(gpu_type="H200", gpu_count=want, name=name)
 #   pod = lium.wait_ready(rented.pod, timeout=600)
 
@@ -251,7 +251,7 @@ Notes:
 
 Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the result or re-raises the remote exception, removes the pod or keeps it warm.
 
-**On 0.0.37 the decorator takes only `machine`, `template_id`, `cleanup` and `requirements`**, and its `requirements` go into a plain `python3 -m venv` that does **not** see the image's packages — list torch and every other import there; `timeout`, `keep_warm`, `quiet`, `local`, `.map`/`.local`/`.close`, the venv that sees the image's packages and the result/error semantics below are lium#208 (DAH-3014), not released — the example as written raises `TypeError` on 0.0.37.
+**Since 0.0.40 (lium#208, DAH-3014).** On 0.0.37–0.0.39 the decorator takes only `machine`, `template_id`, `cleanup` and `requirements`, and its `requirements` go into a plain `python3 -m venv` that does **not** see the image's packages — list torch and every other import there; `timeout`, `keep_warm`, `quiet`, `local`, `.map`/`.local`/`.close`, the venv that sees the image's packages and the result/error semantics below need 0.0.40 — the example as written raises `TypeError` on the older releases.
 
 ```python
 import lium
@@ -277,7 +277,7 @@ run.close()          # remove the warm pod now
 | `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
 | `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
-| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; lium#208, not released) |
+| `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; since 0.0.40, lium#208) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
 **On the decorated function:** `f.remote(*a)` (= `f(*a)`), `f.local(*a)`, `f.map(iterable)` (one item per call, all on one pod), `f.close()`.
@@ -297,7 +297,7 @@ run.close()          # remove the warm pod now
 [lium] run: pod stays warm 300s
 ```
 
-Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. **Everything above except `machine`, `template_id`, `cleanup` and `requirements` is lium#208 (DAH-3014), not released**: on 0.0.37 the decorator takes only those four, picks the first node whose name contains `machine` as a substring (`"H200"` — the `"<count>x<gpu>"` form matches nothing there), installs `requirements` into an isolated venv (torch included, if the function needs it), has no `timeout`/`keep_warm`/`local`/`quiet`, no `.map`/`.local`/`.close`, and results must be JSON-serialisable.
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. **Everything above except `machine`, `template_id`, `cleanup` and `requirements` needs 0.0.40 (lium#208, DAH-3014)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains `machine` as a substring (`"H200"` — the `"<count>x<gpu>"` form matches nothing there), installs `requirements` into an isolated venv (torch included, if the function needs it), has no `timeout`/`keep_warm`/`local`/`quiet`, no `.map`/`.local`/`.close`, and results must be JSON-serialisable.
 
 
 ---
@@ -396,8 +396,8 @@ All in `lium.sdk` (and re-exported from `lium`):
 | `LiumRateLimitError` | 429 (retried 3× first for every call except the rent POST inside `up()` and `pod_events()`, which are sent once) |
 | `LiumServerError` | 5xx (retried 3× first for `GET`/`HEAD`/`OPTIONS` and the three `retry=True` POSTs named above; raised at once for any other mutating call) |
 | `PodStartError` | `wait_ready()`: the pod reached a terminal status or vanished; carries `.pod_id`, `.pod`, `.status`, `.history`, `.cause` |
-| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (lium#208) |
-| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (lium#208) |
+| `RemoteExecutionError` | an `@lium.machine` call returned no result: carries `exception_type`, `remote_traceback`, `exit_code`, `stdout`, `stderr`; builtin exceptions re-raise with it as `__cause__` (since 0.0.40, lium#208) |
+| `ResultEncodingError` | (a `TypeError`) the function's return value is not in the round-trip list — JSON scalars/containers, bytes, numpy arrays (since 0.0.40, lium#208) |
 | `LiumHostKeyError` | `ssh_connection()` (so `exec()`, `scp()`, …): the pod's SSH host key differs from the one pinned under `~/.lium/known_hosts/<pod id>` (`LIUM_SSH_INSECURE=1` disables the check) |
 
 `ValueError` (not a `LiumError`) is raised for local problems: no API key, no SSH

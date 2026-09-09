@@ -300,7 +300,7 @@ lium up --gpu H100 -c 8 --name train --ttl 6h --verify-gpus --strict-gpus -y --n
                                                       # checks billed + nvidia-smi GPU counts; removes the pod on a mismatch
 ```
 
-Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and, coming with lium#209 — not in 0.0.37, the latest release — `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK) **picks a matching node and rents it in one call**. The backend route that picks the cheapest is live (`GET /version` lists `rent_by_spec`); the released client 0.0.37 does not call it yet and picks locally (the first Pareto-optimal row of `ls()`, not the cheapest) — lium#209 makes `lium up --gpu` and `Lium.rent` use it. Do not `lium ls` first and rent the first row yourself: it is neither the cheapest nor guaranteed still free. On the 0.0.37 SDK, which has no `rent()`, `ls()` + `up(executor_id=)` is the only path — pick by `price_per_hour`, not the first row (example in `references/sdk-reference.md`).
+Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and, since 0.0.39 (lium#209), `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK) **picks a matching node and rents it in one call**. The backend route that picks the cheapest is live (`GET /version` lists `rent_by_spec`); since 0.0.39 (lium#209) `lium up --gpu` and `Lium.rent` use it; 0.0.37/0.0.38 do not call it and pick locally (the first Pareto-optimal row of `ls()`, not the cheapest). Do not `lium ls` first and rent the first row yourself: it is neither the cheapest nor guaranteed still free. On a 0.0.37/0.0.38 SDK, which has no `rent()`, `ls()` + `up(executor_id=)` is the only path — pick by `price_per_hour`, not the first row (example in `references/sdk-reference.md`).
 
 `lium up` exits 0 only when the pod is running (and, with `--verify-gpus`, when
 the GPU counts agree). It exits 1 **with the pod still running and billing** when
@@ -425,7 +425,7 @@ lium rm -a -y          # remove all pods non-interactively
 - Without `--template_id` or `--image`, `lium up` uses default **PyTorch (CUDA)** template — fastest to start
 - Default Docker-in-Docker (dind) template image: `daturaai/dind`
 - Search templates: `lium templates pytorch` (text search; the table has **no id
-  column and no `--format json`**; `templates --format json` is lium#217, not released)
+  column**; since 0.0.39 (lium#217) `lium templates --format json` / `--json` prints the ids)
 - To get a template id: `curl -s https://lium.io/api/templates -H "X-API-Key: $LIUM_API_KEY" | jq -r '.[] | "\(.id) \(.docker_image):\(.docker_image_tag)"'`
   or `python -c "from lium.sdk import Lium; [print(t.id, t.docker_image, t.docker_image_tag) for t in Lium().templates('pytorch')]"`
 - To use specific template: `lium up --gpu H100 -t <TEMPLATE_ID> -y`
@@ -619,14 +619,16 @@ name the table shows; not accepted by `lium up` in the current release, 0.0.37 a
 earlier — lium#153 fixes it, not released), `price_per_hour`,
 `price_per_gpu_hour`, `gpu_count`, `download_mbps`, `upload_mbps`, `country`.
 
-`--format [table|json]` exists on `lium ls` and `lium ps` (`lium ps --json` is
-rejected). `--json` — a plain flag, not a format choice — is taken by
+`--format [table|json]` exists on `lium ls` and `lium ps` (on 0.0.37/0.0.38
+`lium ps --json` is rejected). `--json` — a plain flag, not a format choice — is taken by
 `lium describe`, `lium exec`, `lium audit`, `lium fund`, `lium balance`,
 `lium signup`, `lium topup create`, `lium topup currencies`, and by the whole
 `lium provider` group (set it on the group: `lium provider --json node list`).
-`lium templates` and `lium up` have neither, and neither does anything else. (A
-`--json` alias everywhere and `templates --format json` are lium#217, not
-released.)
+On 0.0.37/0.0.38 `lium templates` and `lium up` have neither, and neither does
+anything else. Since 0.0.39 (lium#217) `--json` is an alias of `--format json` on
+`ls`, `ps` and `templates` (so `lium ps --json` works), `templates --format json`
+prints the ids, and `LIUM_OUTPUT=json` makes every failure a JSON envelope on
+stderr; `lium up` still has no JSON output.
 
 ## End-to-End Agent Workflow
 
@@ -679,7 +681,7 @@ lium ps                                        # confirm nothing is left billing
 
 ## Run One Python Function on a GPU (no pod scripting)
 
-When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section beyond `machine`, `template_id`, `cleanup` and `requirements` is lium#208 (DAH-3014), **not released**: on 0.0.37 the decorator takes only those four, picks the first node whose name contains the string, installs `requirements` into an isolated venv (so torch must be listed there too), matches `machine` as a substring of the node's name (`"H200"`; the `"1xH200"` form is lium#208 too), and results must be JSON-serialisable.
+When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section beyond `machine`, `template_id`, `cleanup` and `requirements` **needs 0.0.40 (lium#208, DAH-3014)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains the string, installs `requirements` into an isolated venv (so torch must be listed there too), matches `machine` as a substring of the node's name (`"H200"`; the `"1xH200"` form is 0.0.40 too), and results must be JSON-serialisable.
 
 ```python
 import lium
@@ -704,7 +706,7 @@ finally:
     generate.close()                                  # remove the warm pod now (else: keep_warm + 2 min later)
 ```
 
-Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH200"`, `"RTX4090"`; count defaults to 1 — `"A100"` is one A100, not eight). Import inside the function; a module-level import/constant/helper used inside is refused at definition time (it would be a `NameError` on the pod). Return plain Python types (`str()`, `.tolist()`, `.cpu().numpy()`), not tensors or `torch.__version__`. Torch is already on the default template — do not put it in `requirements` (lium#208's venv sees the image's packages; 0.0.37's does not — list it there). `f.map(items)` runs a batch on one pod; `f.local(x)` or `LIUM_MACHINE_LOCAL=1` runs the function locally for tests; `quiet=True` drops the `[lium]` progress lines (the function's own prints still stream). Like the rest of this section (`timeout`, `keep_warm`, `close()`, `RemoteExecutionError`, the node pick), every one of these (map, local, LIUM_MACHINE_LOCAL, quiet) is lium#208, not released — not one of them exists in 0.0.37.
+Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH200"`, `"RTX4090"`; count defaults to 1 — `"A100"` is one A100, not eight). Import inside the function; a module-level import/constant/helper used inside is refused at definition time (it would be a `NameError` on the pod). Return plain Python types (`str()`, `.tolist()`, `.cpu().numpy()`), not tensors or `torch.__version__`. Torch is already on the default template — do not put it in `requirements` (since 0.0.40 the venv sees the image's packages; before that it does not — list it there). `f.map(items)` runs a batch on one pod; `f.local(x)` or `LIUM_MACHINE_LOCAL=1` runs the function locally for tests; `quiet=True` drops the `[lium]` progress lines (the function's own prints still stream). Like the rest of this section (`timeout`, `keep_warm`, `close()`, `RemoteExecutionError`, the node pick), every one of these (map, local, LIUM_MACHINE_LOCAL, quiet) is 0.0.40 (lium#208) — not one of them exists on 0.0.37–0.0.39.
 
 ## Detailed References
 
