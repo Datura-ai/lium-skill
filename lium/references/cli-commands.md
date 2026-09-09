@@ -2,7 +2,9 @@
 
 Written against `lium --version` **0.0.29**. Every flag below appears in that
 binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
-`lium <command> --help` is the authority, not this file.
+`lium <command> --help` is the authority, not this file. The one exception is
+marked inline: an option or command tagged **(lium#NNN, not released)** is read
+off that open lium PR's `--help` and is not in the released binary yet.
 
 ## Table of Contents
 
@@ -13,6 +15,7 @@ binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
 - [lium ls](#lium-ls)
 - [lium up](#lium-up)
 - [lium ps](#lium-ps)
+- [lium audit](#lium-audit)
 - [lium ssh](#lium-ssh)
 - [lium exec](#lium-exec)
 - [lium scp](#lium-scp)
@@ -246,6 +249,34 @@ lium ps [OPTIONS] [POD_ID]
 
 `lium ps --format json` **is supported** and is the way an agent should read pod
 state. There is no `-a/--all` and no `--sort`.
+
+## lium audit
+
+**Since lium 0.0.37.** Who did what to the account's pods, and
+when: every rent, reboot, edit and delete with the session or API key that requested it;
+entries the platform wrote by itself (a validator reply, a balance stop) say `platform`.
+Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208, not
+released); against today's API an API key exits `3` with a hint.
+
+```bash
+lium audit [OPTIONS]                 # since 0.0.37
+  --pod TEXT             Only this pod: id, huid, name or index from the last ps; a deleted
+                         pod's full id
+  --since TEXT           Only events after this: 24h, 30m, 7d or an ISO timestamp (else exit 2)
+  --key TEXT             Only actions made with this API key id
+  --limit INTEGER        Newest events to fetch, 1–1000 (default 200; out of range exits 2 locally)
+  --json                 Print the events as machine-readable JSON (newest first)
+```
+
+The table — When (UTC) / Pod / What / By — reads oldest first. `By` is `key <name> (<id8>)`,
+`session` (browser) or `platform`. Exit `5` when `--pod` is neither a listed pod nor a full UUID
+(a full id passes through so a deleted pod can be queried).
+
+```bash
+lium audit --since 24h                                              # today
+lium audit --pod my-pod                                             # one pod's history
+lium audit --json | jq '.[] | select(.actor.api_key_name == "ci")'  # one key's actions
+```
 
 ## lium ssh
 
@@ -617,7 +648,7 @@ form accepts is **not** uniform:
 | Form | Example | Accepted by |
 |------|---------|-------------|
 | Name / HUID / UUID | `lium ssh eager-wolf-aa` | every command |
-| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *` — **not** `ps` and **not** `logs` |
+| Index from the last `lium ps` | `lium ssh 1` | `ssh`, `exec`, `scp`, `rsync`, `rm`, `reboot`, `update`, `port-forward`, `bk *`, `audit --pod` (since 0.0.37) — **not** `ps` and **not** `logs` |
 | Comma list | `lium exec 1,2,3 "cmd"` | `TARGETS` commands only |
 | All | `lium exec all "cmd"` | `TARGETS` commands only |
 
@@ -652,24 +683,29 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 |------|---------|
 | 0 | Success |
 | 1 | General error |
-| 2 | Configuration error (bad arguments, unreadable script, missing config) |
+| 2 | Configuration error (bad arguments, unreadable script, missing config, no API key) |
+| 3 | API error — the API refused or failed the call: 401 (bad or revoked key), 404, 429, 5xx |
 | 4 | SSH error |
 | 5 | Pod not found |
+| 6 | Permission denied — the API answered 403 (an empty balance on `lium up`, for one) |
 
-⚠️ **The exit code alone is not proof of success.** Only three commands are
-reliable:
+Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
+(`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
+`lium ps` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
+`lium ls` reads the public node list and succeeds with any key, so it is not a key check.
+Inside a batch the rule changes: `rm`, `reboot`, `scp`, `rsync` (and `volumes rm`,
+`schedules rm`) finish the batch and exit `1` naming the items that failed, whatever
+the API answered for them (`Failed to remove pods: brave-orbit-b9`); only their
+target lookup before the batch exits `3`/`6`. The exceptions are `lium provider …`,
+which keeps its own map (`1` arguments, `2` auth, `3` portal, `5` ssh, `6` config
+missing, `7` token-cache contention), and `lium gpu-splitting …`, which runs on the
+host without the API and exits `1` on any failure. `lium exec` exits with the remote
+command's code (`5` when no pod matched, `2` on a bad argument or unreadable
+script). Under `--json` (`exec`, `describe`, `balance`,
+`fund`, `topup`, `signup`) a failure is one JSON object on stderr,
+`{"ok": false, "error": {"code": ..., "message": ...}}`, and stdout stays empty;
+`--format json` (`ls`, `ps`) reports a failure as text.
 
-- `lium exec` — exits with the remote command's code, `5` when no pod matched,
-  `2` on a bad argument or unreadable script;
-- `lium rm` — `5` when nothing matched `TARGETS`;
-- `lium up` — `1` when node selection, renting or readiness fails, `2` on a bad
-  argument, `4` when SSH is unavailable.
-
-**Everything else can print `Error: ...` and still exit 0** — including
-`lium ls`, whose API and authentication failures are swallowed the same way as in
-`ssh`, `logs`, `reboot`, `scp`, `rsync`, `port-forward`, `update` and the `bk`
-sub-commands. So `lium ls >/dev/null && echo OK` prints `OK` with a revoked API
-key. Read the output, or use `--format json` / `--json` where it exists, instead
-of branching on `$?` alone. Tracked as **DAH-2593**.
-
-Codes 3 and 6 exist in the source but no command produces them today.
+`lium audit` *(since 0.0.37)* adds nothing to the table: its 401 is
+exit `3` like every other command's, with the hint that if the key works for
+`lium ps` the backend does not yet open `/users/me/events` to API keys.

@@ -316,25 +316,32 @@ User must have a verified Bittensor wallet at https://lium.io/billing.
 export PATH="$HOME/.lium/bin:$PATH"  # needed in current shell session
 ```
 
-#### After `lium init --session` — Verify with `lium ls`
+#### After `lium init --session` — Verify with `lium balance`
 
-After completing the two-step auth, run `lium ls` to verify. If it returns results, auth is done.
+After completing the two-step auth, run `lium balance` to verify: a balance means the key
+works; an error with exit `3` means it does not. `lium ls` returns results with any key
+(the node list is public), so it proves nothing about the key.
 
-#### An Error Does Not Always Mean a Non-Zero Exit
+#### Exit Codes Hold Since 0.0.31 — Still Read the Output
 
-Only `lium exec`, `lium rm` and `lium up` exit non-zero when they fail. Everything
-else — including **`lium ls`** — can print `Error: ...` and still exit **0**:
+Since lium **0.0.31** every command exits non-zero when it fails (table in
+`references/cli-commands.md` § Exit Codes): `lium ps` with a revoked key exits `3`,
+a 403 exits `6`, and `lium ssh no-such-pod-xyz` exits `5`:
 
 ```bash
-lium ssh no-such-pod-xyz              # prints "No active pods", exits 0
-lium ls >/dev/null && echo "auth OK"  # prints "auth OK" even with a revoked key
+lium ssh no-such-pod-xyz              # prints "No active pods" (or "Pod '…' not found"), exits 5
+lium rm pod-a,pod-b -y                # one refused by the API: "Removed 1 pod(s): pod-a" / "Failed to remove pods: pod-b", exits 1
 ```
 
-So `lium ls` is **not** a usable auth check. Never treat `$?` alone as proof that
-a step worked. Read the output, or prefer the machine-readable modes
-(`lium ls --format json`, `lium ps --format json`, `lium exec --json`) and check
-the result there — an empty `[]` from `lium ls --format json` means "no nodes",
-while an error line on stderr means the call failed. Tracked as DAH-2593.
+Two things `$?` alone does not tell you: a batch (`rm`, `reboot`, `scp`, `rsync`)
+finishes the batch and exits `1` naming the items that failed — read the line to
+learn which — and an empty result is a success (`lium ls --format json` prints `[]`
+and exits `0` when no node matches). Prefer the machine-readable modes
+(`lium ls --format json`, `lium ps --format json`, `lium exec --json`) and check the
+result there: `--json` commands put a failure on stderr as one JSON object,
+`{"ok": false, "error": {...}}`, with stdout empty; `--format json` prints
+`Error: ...` as text. Releases before 0.0.31 printed `Error: ...` and exited `0` on
+most failures (DAH-2593); pin `lium>=0.0.31` when a script branches on `$?`.
 
 #### Pod Targeting — Prefer Names
 
@@ -365,9 +372,11 @@ lium CLI has no renter-side identity command — no `whoami` for your API key.
 (`lium provider portal whoami` exists, but it reports the *provider* portal session,
 not the API key you rent with.)
 
-To check the key, run `lium balance`: it prints a balance when the key works and an
-error when it does not. Do **not** use `lium ls` for this — it prints an error and
-exits 0 on an auth failure, so `lium ls && echo OK` says OK with a revoked key.
+To check the key, run `lium balance`: it prints a balance when the key works and,
+since 0.0.31, exits `3` with an error when the key is bad or revoked. Do **not** use
+`lium ls` for this: the node list is public, so it succeeds (exit `0`) with any key.
+Releases before 0.0.31 exited `0` on most failures — pin `lium>=0.0.31` when a script
+branches on `$?`.
 
 #### Long-Running Commands Over SSH
 
@@ -554,7 +563,7 @@ lium init --no-browser
 # → wait for user to confirm they approved
 lium init --session <SESSION_ID>
 
-# 3. Verify (lium ls exits 0 even on an auth failure — check balance instead)
+# 3. Verify the key (lium ls lists public data and succeeds with any key; a bad key exits 3 here since 0.0.31)
 lium balance --json
 # A zero balance means signup credit did not land; fund the account before renting.
 
