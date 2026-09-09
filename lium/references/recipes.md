@@ -4,13 +4,15 @@ Copy-paste jobs against the released lium CLI (0.0.37). Each one follows the pla
 `SKILL.md`: unique name, `--ttl`, GPU-count check, `/workspace` for everything,
 detached work, results pulled with `rsync`, and a teardown that is confirmed with
 `lium ps`. Replace the GPU type, count and model to taste. All of them assume
-`LIUM_API_KEY` is exported and `jq` is installed locally.
+`LIUM_API_KEY` is exported and `jq` is installed locally. Run each one as a script
+(`bash job.sh`), not pasted into an interactive shell: the `trap teardown EXIT` that
+removes the pod fires when the script ends.
 
 Shared helpers used below:
 
 ```bash
 # Remote stdout of one command, without the CLI's status line
-rexec() { lium exec "$1" --json "$2" | jq -r '.results[0].stdout'; }
+rexec() { local out; out=$(lium exec "$1" --json "$2") || return $?; jq -r '.results[0].stdout' <<<"$out"; }   # keeps lium's exit code (5 when the pod is gone)
 # Host and port of a pod's SSH endpoint
 sshinfo() { lium ps "$1" --format json | jq -r '.[0].ssh_cmd | capture("@(?<h>\\S+).*-p (?<p>\\d+)") | "\(.h) \(.p)"'; }
 # Rent with the built-in GPU check; when up fails after the rent was accepted (pod_not_ready
@@ -22,9 +24,16 @@ rent() { lium up "$@" -y --no-ssh --verify-gpus --strict-gpus && return 0
 # ~/.lium/known_hosts/<pod id>) and root@host; only -i is missing
 sshcmd() { lium ps "$1" --format json | jq -r '.[0].ssh_command'; }
 # Pull a directory from a pod (resumable, throttled, no compression): -e is the ssh command
-# without its trailing root@host, plus the key ($HOME, not ~: ssh expands ~ from passwd, not $HOME)
-pull() { local C; C=$(sshcmd "$1"); rsync -a --partial --inplace --info=progress2 --bwlimit="${4:-20000}" \
+# without its trailing root@host, plus the key — `ssh.key_path` in `lium config show`, id_ed25519
+# by default ($HOME, not ~: ssh expands ~ from passwd, not $HOME)
+pull() { local C; C=$(sshcmd "$1"); rsync -a --partial --inplace --progress --bwlimit="${4:-20000}" \
   -e "${C% root@*} -i $HOME/.ssh/id_ed25519" "${C##* }:$2" "$3"; }
+# Is the pod gone (TTL fired, removed elsewhere)? `lium ps <name>` exits 5 for a missing pod; any other
+# non-zero exit from lium is an API/SSH hiccup — the loops below retry on those, and only stop on 5.
+gone() { lium ps "$1" --format json >/dev/null 2>&1; [ $? -eq 5 ]; }
+# Tear the pod down however the script ends (success, a failed step, Ctrl-C): a pod left behind bills
+# until its TTL. Set right after rent(); prints the number of pods still listed (0 = nothing billing).
+teardown() { lium rm "$NAME" -y >/dev/null 2>&1; echo "pods left: $(lium ps --format json | jq length)"; }
 ```
 
 ## Table of Contents
@@ -47,8 +56,8 @@ the billed GPU count or the visible GPU count is not the requested count.
 set -euo pipefail
 POD=$1; WANT=$2
 lium ps "$POD" --format json > "/tmp/$POD.json"
-BILLED=$(jq -r '.[0].gpu_count' "/tmp/$POD.json")
-PRICE=$(jq -r '.[0].price_per_hour' "/tmp/$POD.json")
+BILLED=$(jq -r '.[0].gpu_count' "/tmp/$POD.json")     # the node's GPU count: what a whole-node rent (-c N on a free node) is billed for
+PRICE=$(jq -r '.[0].price_per_hour' "/tmp/$POD.json")   # the pod's own $/h — the billing evidence
 lium exec "$POD" --json "nvidia-smi -L" > "/tmp/$POD.nvidia-smi.json"
 SEEN=$(jq -r '.results[0].stdout' "/tmp/$POD.nvidia-smi.json" | grep -c '^GPU ' || true)
 echo "requested=$WANT billed=$BILLED visible=$SEEN price_per_hour=$PRICE"
@@ -74,7 +83,8 @@ before that.
 ```bash
 NAME=serve-$(date +%s); MODEL=Qwen/Qwen2.5-72B-Instruct; WANT=8
 rent --gpu H200 -c $WANT --name "$NAME" --ttl 8h || exit 1
-./verify_gpus.sh "$NAME" $WANT
+trap teardown EXIT                            # from here on, every exit removes the pod
+./verify_gpus.sh "$NAME" $WANT || exit 1     # it removed the pod; stop here
 
 cat > setup.sh <<'EOF'
 set -e
@@ -91,16 +101,25 @@ lium ps "$NAME" --format json | jq '.[0].ports'          # e.g. {"22": 31022, "8
 PORT=8000
 
 # Download weights first (detached; hf_transfer), then start the server (detached)
-rexec "$NAME" "cd /workspace && HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid /workspace/venv/bin/hf download $MODEL > /workspace/logs/download.log 2>&1 < /dev/null & echo \$!"
-until rexec "$NAME" "tail -n 1 /workspace/logs/download.log" | grep -q '/workspace/hf'; do sleep 30; done
+DLPID=$(rexec "$NAME" "cd /workspace && HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid /workspace/venv/bin/hf download $MODEL > /workspace/logs/download.log 2>&1 < /dev/null & echo \$!")
+until rexec "$NAME" "tail -n 1 /workspace/logs/download.log" | grep -q '/workspace/hf'; do
+  gone "$NAME" && { echo "pod gone (TTL or removal)"; exit 1; }
+  # the remote always exits 0 here, so a failed rexec is an API/SSH hiccup (retried), not a verdict
+  STATE=$(rexec "$NAME" "kill -0 $DLPID 2>/dev/null && echo running || echo exited") || STATE=unknown
+  [ "$STATE" = exited ] && { echo "download exited before finishing — see /workspace/logs/download.log"; exit 1; }
+  sleep 30
+done
 
-rexec "$NAME" "cd /workspace && HF_HOME=/workspace/hf nohup setsid /workspace/venv/bin/vllm serve $MODEL --tensor-parallel-size $WANT --host 0.0.0.0 --port $PORT --gpu-memory-utilization 0.92 > /workspace/logs/vllm.log 2>&1 < /dev/null & echo \$!"
+SRVPID=$(rexec "$NAME" "cd /workspace && HF_HOME=/workspace/hf nohup setsid /workspace/venv/bin/vllm serve $MODEL --tensor-parallel-size $WANT --host 0.0.0.0 --port $PORT --gpu-memory-utilization 0.92 > /workspace/logs/vllm.log 2>&1 < /dev/null & echo \$!")
 # SGLang instead:
 #   pip install -q "sglang[all]"  (in setup.sh)
 #   ... nohup setsid /workspace/venv/bin/python -m sglang.launch_server --model-path $MODEL --tp $WANT --host 0.0.0.0 --port $PORT ...
 
 # Wait for readiness from inside the pod, then hit it from outside
 until lium exec "$NAME" "curl -sf localhost:$PORT/v1/models" >/dev/null 2>&1; do
+  gone "$NAME" && { echo "pod gone (TTL or removal)"; exit 1; }
+  STATE=$(rexec "$NAME" "kill -0 $SRVPID 2>/dev/null && echo running || echo exited") || STATE=unknown
+  [ "$STATE" = exited ] && { echo "server exited — see /workspace/logs/vllm.log"; exit 1; }
   rexec "$NAME" "tail -n 1 /workspace/logs/vllm.log"; sleep 30
 done
 read -r HOST _ < <(sshinfo "$NAME"); EXT=$(lium ps "$NAME" --format json | jq -r ".[0].ports[\"$PORT\"]")
@@ -108,7 +127,7 @@ curl -s "http://$HOST:$EXT/v1/chat/completions" -H 'Content-Type: application/js
   -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":8}"
 
 # ... run the evaluation / traffic ...
-lium rm "$NAME" -y && lium ps --format json | jq length
+# the EXIT trap removes the pod and prints "pods left: 0"
 ```
 
 Notes: `libnuma1` is needed by SGLang's kernels; Blackwell nodes need a vLLM /
@@ -125,7 +144,8 @@ tear down. Editing, upscaling and encoding happen on a cheap pod or locally.
 ```bash
 NAME=gen-$(date +%s); WANT=8
 rent --gpu H200 -c $WANT --name "$NAME" --ttl 4h || exit 1
-./verify_gpus.sh "$NAME" $WANT
+trap teardown EXIT
+./verify_gpus.sh "$NAME" $WANT || exit 1     # it removed the pod; stop here
 
 cat > setup.sh <<'EOF'
 set -e
@@ -151,13 +171,21 @@ done
 rexec "$NAME" "nohup setsid nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used --format=csv -l 60 > /workspace/logs/gpu.csv 2>&1 < /dev/null & echo \$!"
 
 # Wait for the workers, watching utilisation
-while [ "$(rexec "$NAME" 'pgrep -fc "python gen.py"')" != "0" ]; do
-  rexec "$NAME" "nvidia-smi --query-gpu=index,utilization.gpu --format=csv,noheader | tr '\n' ' '"; sleep 60
+# `[p]ython` keeps pgrep from matching the shell that runs this very command; `|| true` because
+# pgrep -c exits 1 on a zero count; the remote therefore always exits 0 and a failed rexec is lium's own error
+while :; do
+  if LEFT=$(rexec "$NAME" "pgrep -fc '[p]ython gen.py' || true"); then
+    [ "$LEFT" != "0" ] || break
+    rexec "$NAME" "nvidia-smi --query-gpu=index,utilization.gpu --format=csv,noheader | tr '\n' ' '"
+  else
+    gone "$NAME" && { echo "pod gone (TTL or removal)"; exit 1; }    # anything else: an API/SSH hiccup, retry
+  fi
+  sleep 60
 done
 
 pull "$NAME" /workspace/out/ ./out/                 # rsync, resumable, no -z
 pull "$NAME" /workspace/logs/ ./logs/
-lium rm "$NAME" -y && lium ps --format json | jq length
+# the EXIT trap removes the pod and prints "pods left: 0"
 ```
 
 Video: encode on the pod with `ffmpeg` only if it is already rented for the
@@ -176,7 +204,8 @@ processes but keep `/workspace`.
 NAME=rl-$(date +%s)
 lium ls --gpu H100 --count 1 --format json | jq -r 'sort_by(.price_per_hour) | .[0:5][] | "\(.huid) \(.ram_gb)GB RAM $\(.price_per_hour)/h \(.country)"'
 rent --gpu H100 -c 1 --name "$NAME" --ttl 12h || exit 1
-./verify_gpus.sh "$NAME" 1
+trap teardown EXIT
+./verify_gpus.sh "$NAME" 1 || exit 1     # it removed the pod; stop here
 
 cat > setup.sh <<'EOF'
 set -e
@@ -191,7 +220,7 @@ lium rsync "$NAME" ./rl /workspace/rl                # code; must --resume from 
 rexec "$NAME" "cd /workspace/rl && nohup setsid /workspace/venv/bin/python train.py --ckpt-dir /workspace/ckpt --resume > /workspace/logs/train.log 2>&1 < /dev/null & echo \$!" > pid.txt
 # Detect a restart: PID 1's age resets. Relaunch with --resume if so.
 while :; do
-  ALIVE=$(rexec "$NAME" "kill -0 $(cat pid.txt) 2>/dev/null && echo yes || echo no")
+  ALIVE=$(rexec "$NAME" "kill -0 $(cat pid.txt) 2>/dev/null && echo yes || echo no") || { gone "$NAME" && { echo "pod gone (TTL or removal)"; exit 1; }; sleep 120; continue; }
   if [ "$ALIVE" = no ]; then
     if rexec "$NAME" "test -f /workspace/ckpt/DONE && echo done" | grep -q done; then break; fi
     echo "worker gone (pod uptime $(rexec "$NAME" 'ps -p 1 -o etimes=')s) — resuming"
@@ -200,7 +229,7 @@ while :; do
   sleep 120
 done
 pull "$NAME" /workspace/ckpt/ ./ckpt/
-lium rm "$NAME" -y && lium ps --format json | jq length
+# the EXIT trap removes the pod and prints "pods left: 0"
 ```
 
 TensorBoard: bind it to an internal port from `lium ps --format json | jq '.[0].ports'`
@@ -216,7 +245,8 @@ an idle 8-GPU node hurts most.
 ```bash
 NAME=batch-$(date +%s); WANT=2
 rent --gpu RTX4090 -c $WANT --name "$NAME" --ttl 6h || exit 1
-./verify_gpus.sh "$NAME" $WANT
+trap teardown EXIT
+./verify_gpus.sh "$NAME" $WANT || exit 1     # it removed the pod; stop here
 
 cat > setup.sh <<'EOF'
 set -e
@@ -234,12 +264,18 @@ lium scp "$NAME" ./process.py /workspace/process.py    # args: --shard i/n --in 
 for G in $(seq 0 $((WANT-1))); do
   rexec "$NAME" "cd /workspace && CUDA_VISIBLE_DEVICES=$G HF_HOME=/workspace/hf nohup setsid /workspace/venv/bin/python process.py --shard $G/$WANT --in /workspace/in --out /workspace/out/part-$G.parquet > /workspace/logs/part-$G.log 2>&1 < /dev/null & echo \$!"
 done
-while [ "$(rexec "$NAME" 'pgrep -fc "python process.py"')" != "0" ]; do
-  rexec "$NAME" "tail -qn 1 /workspace/logs/part-*.log"; sleep 60
+while :; do
+  if LEFT=$(rexec "$NAME" "pgrep -fc '[p]ython process.py' || true"); then
+    [ "$LEFT" != "0" ] || break
+    rexec "$NAME" "tail -qn 1 /workspace/logs/part-*.log"
+  else
+    gone "$NAME" && { echo "pod gone (TTL or removal)"; exit 1; }
+  fi
+  sleep 60
 done
 rexec "$NAME" "ls -l /workspace/out && du -sh /workspace/out"
 pull "$NAME" /workspace/out/ ./out/ 50000
-lium rm "$NAME" -y && lium ps --format json | jq length
+# the EXIT trap removes the pod and prints "pods left: 0"
 ```
 
 ## Teardown checklist

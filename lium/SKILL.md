@@ -562,7 +562,9 @@ lium ls --gpu H200 --count 8 --format json \
 lium up --gpu H200 -c 8 --name "$NAME" --ttl 6h -y --no-ssh --verify-gpus --strict-gpus \
   || { lium ps "$NAME" --format json >/dev/null 2>&1 && lium rm "$NAME" -y; exit 1; }
 
-# 3. Read the pod record (up prints no JSON) and keep the evidence of what you pay for
+# 3. Read the pod record (up prints no JSON) and keep the evidence of what you pay for.
+#    ps's gpu_count is the node's GPU count (= the billed count for a whole-node rent like this one;
+#    `lium up --verify-gpus` above already compared the pod row's own billed count)
 lium ps "$NAME" --format json > pod.json
 BILLED=$(jq -r '.[0].gpu_count' pod.json)
 SEEN=$(lium exec "$NAME" --json "nvidia-smi -L" | jq -r '.results[0].stdout' | grep -c '^GPU ' || true)
@@ -581,13 +583,22 @@ lium exec "$NAME" --script setup.sh
 # 5. Start the job detached (capture the PID from --json), then poll
 lium scp "$NAME" ./train.py /workspace/train.py
 PID=$(lium exec "$NAME" --json "cd /workspace && HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid /workspace/venv/bin/python train.py > /workspace/logs/train.log 2>&1 < /dev/null & echo \$!" | jq -r '.results[0].stdout' | tr -d '[:space:]')
-while lium exec "$NAME" "kill -0 $PID" >/dev/null 2>&1; do
-  lium exec "$NAME" "tail -n 2 /workspace/logs/train.log"; sleep 60
+# The remote always exits 0 here, so a failed `lium exec` is lium's own error: exit 5 = the pod is gone
+# (TTL fired, removed elsewhere), anything else an API/SSH hiccup to retry — never "job finished".
+while :; do
+  OUT=$(lium exec "$NAME" --json "kill -0 $PID 2>/dev/null && echo running || echo finished"); rc=$?   # lium's own exit, before any pipe
+  [ "$rc" -eq 5 ] && { echo "pod gone (TTL or removal)"; exit 1; }
+  if [ "$rc" -eq 0 ]; then
+    STATE=$(jq -r '.results[0].stdout' <<<"$OUT" | tr -d '[:space:]')
+    [ "$STATE" = finished ] && break
+    lium exec "$NAME" "tail -n 2 /workspace/logs/train.log"
+  fi
+  sleep 60
 done
 
 # 6. Pull results (no -z for binary output; resumable), then tear down and confirm
 SSH_COMMAND=$(jq -r '.[0].ssh_command' pod.json)   # ssh -p <port> <pinned host-key options> root@<host>
-rsync -a --partial --inplace --info=progress2 -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+rsync -a --partial --inplace --progress -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
   "${SSH_COMMAND##* }:/workspace/out/" ./out/
 lium rm "$NAME" -y
 lium ps --format json | jq 'length'   # 0 → nothing left billing
@@ -612,7 +623,7 @@ GPUs over SSH after the pod is ready and exits 1 on a mismatch; with
 right after `up`:
 
 ```bash
-lium ps "$NAME" --format json | jq '.[0] | {gpu_count, price_per_hour, config}'   # what you are billed for
+lium ps "$NAME" --format json | jq '.[0] | {gpu_count, price_per_hour, config}'   # the node's GPUs and the pod's $/h — what a whole-node rent is billed for
 lium exec "$NAME" "nvidia-smi -L"                                                # what the container sees
 lium exec "$NAME" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"
 ```
@@ -675,7 +686,7 @@ lium rsync "$NAME" ./src /workspace/src
 # Download a directory: plain rsync over the pod's ready ssh command (lium ps --format json
 # `ssh_command`: -p, the pinned host key, root@host; add -i, drop the trailing root@host for -e)
 SSH_COMMAND=$(lium ps "$NAME" --format json | jq -r '.[0].ssh_command')
-rsync -a --partial --inplace --info=progress2 --bwlimit=20000 \
+rsync -a --partial --inplace --progress --bwlimit=20000 \
   -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
   "${SSH_COMMAND##* }:/workspace/out/" ./out/
 ```
