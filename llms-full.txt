@@ -334,7 +334,7 @@ flag nodes under 100 Mbps; it does not predict Hugging Face or PyPI throughput. 
 the same few-hundred-Mbps band. Measure before committing:
 
 ```bash
-lium exec <pod> "curl -o /dev/null -sS -w '%{speed_download}\n' 'https://speed.cloudflare.com/__down?bytes=500000000'"   # bytes/s
+lium exec <pod> "curl -o /dev/null -sS -w '%{http_code} %{speed_download}\n' 'https://speed.cloudflare.com/__down?bytes=50000000'"   # HTTP code, bytes/s (>= 100 MB is refused with 403)
 lium exec <pod> "cd /workspace && time hf download openai-community/gpt2 model.safetensors --local-dir /workspace/probe"
 ```
 
