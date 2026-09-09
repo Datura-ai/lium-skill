@@ -396,8 +396,9 @@ Inside `lium exec` (and any `ssh host bash -c '…'` one-liner) the whole comman
 is the invoking shell's own command line, so `pkill -f "python train.py"` matches
 that shell too and kills the session before or instead of the job — the call
 returns a broken pipe and the job may still be running (two agents lost sessions
-this way on the same day). Stop jobs by PID: write one when you start (`… & echo $! > /tmp/job.pid`)
-and `kill "$(cat /tmp/job.pid)"`. If you must search by name, list first and
+this way on the same day). Stop jobs by PID: write one when you start (`… & echo \$! > /tmp/job.pid` —
+escaped, like every `$` inside a double-quoted `lium exec "…"`, or the local shell expands it to nothing and the
+pod gets an empty PID file) and stop with `kill \$(cat /tmp/job.pid)` as below. If you must search by name, list first and
 exclude your own shell and its parent, then kill the PIDs you inspected:
 
 ```bash
