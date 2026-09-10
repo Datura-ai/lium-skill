@@ -1,6 +1,6 @@
 # Lium
 
-Decentralized GPU rental platform on Bittensor. CLI and Python SDK for renting GPUs, managing pods, and deploying ML workloads.
+Agent-first compute: a decentralized GPU rental platform on Bittensor. CLI and Python SDK for renting GPUs, managing pods, and deploying ML workloads.
 
 Install CLI (standalone binary, no Python required):
   curl -fsSL https://lium.io/install.sh | bash
