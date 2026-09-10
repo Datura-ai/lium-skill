@@ -296,6 +296,56 @@ lium up --gpu H100 --jupyter -y --no-ssh              # with Jupyter
 
 Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and, coming with lium#209 — not in 0.0.37, the latest release — `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK) **picks a matching node and rents it in one call**. The backend route that picks the cheapest is live (`GET /version` lists `rent_by_spec`); the released client 0.0.37 does not call it yet and picks locally (the first Pareto-optimal row of `ls()`, not the cheapest) — lium#209 makes `lium up --gpu` and `Lium.rent` use it. Do not `lium ls` first and rent the first row yourself: it is neither the cheapest nor guaranteed still free. On the 0.0.37 SDK, which has no `rent()`, `ls()` + `up(executor_id=)` is the only path — pick by `price_per_hour`, not the first row (example in `references/sdk-reference.md`).
 
+### Before You Rent 8 GPUs — Check Interconnect and Ingress First
+
+A multi-GPU listing does not tell you how the GPUs are wired together or how fast the
+node pulls from the internet. Both decide whether a tensor-parallel / FSDP job runs at
+all and how long the weights take to arrive. Check them in the first minute of the
+rental, before any download or launch, and delete the pod if they are wrong.
+
+```bash
+lium exec <pod> "nvidia-smi topo -m; nvidia-smi topo -p2p r"
+```
+
+Read `topo -m`: every off-diagonal GPU cell must be `NV#` (e.g. `NV18` on H100/H200,
+`NV12` on A100) for a proper HGX board. `PIX`/`PXB`/`PHB`/`NODE`/`SYS` means PCIe — several
+times slower for NCCL collectives. Read `topo -p2p r`: every off-diagonal cell must be
+`OK`; `NS` everywhere means peer-to-peer is disabled (seen on virtualised 8× H200 hosts),
+and NCCL fails on its first all-reduce with `unhandled cuda error` / `operation not
+supported`.
+
+Decision rule for TP/FSDP jobs: all `NV#` and all `OK` → proceed. Anything else →
+`lium rm <pod> -y` and pick another node. If the job must run there anyway, NCCL only works
+over loopback sockets, and TP=8 serving of a large model is impractical. Each `lium exec` is
+a fresh SSH session, so a bare `export` in one call is gone in the next; pass the variables
+with `-e` on the call that runs the job:
+
+```bash
+lium exec <pod> -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 -e NCCL_IB_DISABLE=1 -e NCCL_SOCKET_IFNAME=lo "python train.py"   # virtualised host without RDMA NICs
+```
+
+One independent process per GPU (batch inference, best-of-N generation, sweeps) does not
+need the interconnect and runs at full speed on any eight cards.
+
+Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of the validator's
+VerifyX check, which fetches a real object of known size and hash (the speed-test average is
+the fallback when VerifyX has no figure; **Upload** follows the same order). It flags nodes under
+100 Mbps as slow; it does not predict Hugging Face or PyPI throughput. The same
+756 GB checkpoint pulled at 2.6–4 GB/s, 1.04 GB/s and 45–200 MB/s on three nodes listed in
+the same few-hundred-Mbps band. Measure before committing:
+
+```bash
+lium exec <pod> "curl -o /dev/null -sS -w '%{http_code} %{speed_download}\n' 'https://speed.cloudflare.com/__down?bytes=50000000'"   # HTTP code, bytes/s (>= 100 MB is refused with 403)
+lium exec <pod> "curl -L -o /dev/null -sS --max-time 20 -w '%{http_code} %{speed_download}\n' https://huggingface.co/openai-community/gpt2/resolve/main/model.safetensors"   # same for the Hugging Face CDN; -L follows the redirect, 20 s cap, nothing written to disk
+```
+
+Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB checkpoint is
+4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
+0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
+the controlling machine. An `interconnect` field, a CDN-measured ingress/egress figure and
+`--nvlink` / `--min-ingress` filters are being added to the API and `lium ls`; until your
+CLI shows a **Link** column, these commands are the check.
+
 ### Non-Interactive Funding
 
 ```bash
