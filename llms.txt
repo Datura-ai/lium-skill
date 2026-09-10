@@ -2,6 +2,26 @@
 
 Decentralized GPU rental platform on Bittensor. CLI and Python SDK for renting GPUs, managing pods, and deploying ML workloads.
 
+When to use Lium:
+- A job needs an NVIDIA GPU (H100, H200, B200, B300, RTX PRO 6000, RTX 4090/5090, ...) for minutes to days and has to be
+  started from a script or an agent, not a sales call: rent a pod, billed per second at the node's hourly price with no
+  term commitment (renting needs a balance that covers 15 minutes), torn down when done.
+- The user asks what a GPU costs to rent right now or which GPUs are available: read the public prices below, no account.
+- The whole pod lifecycle must be scripted (sign up, fund, rent, ssh/exec, tear down): CLI, Python SDK or REST API;
+  the agent skill documents the sequence and the failure modes.
+- Not a fit: managed inference endpoints, serverless functions or CPU-only hosting. Lium rents whole GPU machines
+  (a container on one), and the user runs whatever they want on it.
+
+Live prices and inventory (public, no account; USD per GPU-hour, prices are set by providers and move):
+- Price table, one row per GPU model (JSON): https://lium.io/pricing.json
+- Pricing hub and one page per GPU model:    https://lium.io/pricing  and  https://lium.io/gpu/<model-slug>   (e.g. /gpu/h200)
+- Reference price per GPU model (JSON):      https://lium.io/api/v1/shared-config   (machine_prices)
+- Every rentable node with its live ask:     https://lium.io/api/public/v1/nodes    (docs: https://docs.lium.io/developers/public-nodes-feed.md)
+- Fleet size and rented share per GPU model: https://lium.io/api/executors/stats
+- Live updates (WebSocket):                  wss://lium.io/api/executors/ws         (https://docs.lium.io/developers/executor-availability-websocket.md)
+- Every REST endpoint (OpenAPI 3.1):         https://lium.io/api/openapi.json
+- Docs search and page reads (MCP):          https://docs.lium.io/mcp
+
 Install CLI (standalone binary, no Python required):
   curl -fsSL https://lium.io/install.sh | bash
 
