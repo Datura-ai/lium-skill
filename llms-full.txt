@@ -553,15 +553,20 @@ not there). Work runs **detached** and is polled; results are pulled with
 export LIUM_API_KEY=sk_...           # non-interactive auth; beats ~/.lium/config.ini
 NAME=job-$(date +%s)
 
-# 1. Pick hardware from JSON, not from the table
-lium ls --gpu H200 --count 8 --format json \
-  | jq -r 'map(select(.tier=="secure")) | sort_by(.price_per_gpu_hour) | .[0] | "\(.huid) \(.config) $\(.price_per_hour)/h \(.country)"'
+# 1. Pick hardware from JSON, not from the table, and keep the node's id (the UUID) for step 2:
+#    `lium up --gpu H200 -c 8` would pick a node on its own (the first Pareto row, any tier, any price).
+NODE=$(lium ls --gpu H200 --count 8 --format json | jq -c 'map(select(.tier=="secure")) | sort_by(.price_per_gpu_hour) | .[0]')
+[ "$NODE" != null ] || { echo "no secure-tier 8×H200 node is listed"; exit 1; }
+jq -r '"\(.huid) \(.config) $\(.price_per_hour)/h \(.country)"' <<<"$NODE"
+NODE_ID=$(jq -r '.id' <<<"$NODE")
 
-# 2. Rent, non-interactively, with a TTL; --no-ssh returns as soon as the pod is RUNNING.
-#    --verify-gpus --strict-gpus removes the pod when its GPU count is not the one you asked for.
+# 2. Rent that node, non-interactively, with a TTL; --no-ssh returns as soon as the pod is RUNNING.
+#    A node id takes no --gpu/-c (a node id and the filters exclude each other); with no --count the
+#    rent takes the node's free GPUs — the 8 that step 1 filtered on — and --verify-gpus --strict-gpus
+#    removes the pod when the GPU count it sees is not that.
 #    The pod bills from the moment the rent is accepted: when up fails later (pod_not_ready
 #    after --timeout, an SSH check that could not run), the pod is still there — remove it.
-lium up --gpu H200 -c 8 --name "$NAME" --ttl 6h -y --no-ssh --verify-gpus --strict-gpus \
+lium up "$NODE_ID" --name "$NAME" --ttl 6h -y --no-ssh --verify-gpus --strict-gpus \
   || { lium ps "$NAME" --format json >/dev/null 2>&1 && lium rm "$NAME" -y; exit 1; }
 
 # 3. Read the pod record (up prints no JSON) and keep the evidence of what you pay for.
@@ -587,6 +592,7 @@ lium scp "$NAME" ./train.py /workspace/train.py
 PID=$(lium exec "$NAME" --json "cd /workspace && HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid /workspace/venv/bin/python train.py > /workspace/logs/train.log 2>&1 < /dev/null & echo \$!" | jq -r '.results[0].stdout' | tr -d '[:space:]')
 # The remote always exits 0 here, so a failed `lium exec` is lium's own error: exit 5 = the pod is gone
 # (TTL fired, removed elsewhere), anything else an API/SSH hiccup to retry — never "job finished".
+[ -n "$PID" ] || { echo "no PID came back; the job did not start"; lium exec "$NAME" "tail -n 20 /workspace/logs/train.log"; lium rm "$NAME" -y; exit 1; }
 while :; do
   OUT=$(lium exec "$NAME" --json "kill -0 $PID 2>/dev/null && echo running || echo finished"); rc=$?   # lium's own exit, before any pipe
   [ "$rc" -eq 5 ] && { echo "pod gone (TTL or removal)"; exit 1; }
@@ -599,7 +605,7 @@ while :; do
 done
 
 # 6. Pull results (no -z for binary output; resumable), then tear down and confirm
-SSH_COMMAND=$(jq -r '.[0].ssh_command' pod.json)   # ssh -p <port> <pinned host-key options> root@<host>
+SSH_COMMAND=$(lium ps "$NAME" --format json | jq -r '.[0].ssh_command')   # read it again: a restart can move host or port; ssh -p <port> <pinned host-key options> root@<host>
 rsync -a --partial --inplace --progress -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
   "${SSH_COMMAND##* }:/workspace/out/" ./out/
 lium rm "$NAME" -y
@@ -760,7 +766,7 @@ a batch data job, and the "verify what you paid for" check as a script.
 
 ### Only What the Released CLI Has
 
-This skill describes the released CLI (0.0.37) and nothing that is not released;
+This skill describes the released CLI, 0.0.37 as the baseline, with later releases marked where they differ, and nothing that is not released;
 probe with `lium <cmd> --help` before relying on a flag you do not see here.
 
 - GPU count: `lium up --verify-gpus --strict-gpus` is the built-in check; `nvidia-smi -L` inside the pod against `gpu_count` from `lium ps --format json` is the evidence you keep.
