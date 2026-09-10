@@ -157,6 +157,11 @@ lium ls [OPTIONS]
   --gpu TEXT              Filter by GPU type, e.g. A100
   --count INTEGER         Exact GPU count to match (e.g. 1, 8)
   --min-cuda FLOAT        Minimum CUDA version, e.g. 12.4
+  --nvlink                Only nodes whose GPUs are all joined by NVLink (Link column NV#);
+                          nodes with no topology report yet are excluded  (lium#149, not released)
+  --min-download FLOAT    Minimum Download (Mbps) a node must report; nodes with no figure are
+                          excluded; alias --min-ingress; 0, negatives, nan and inf exit 2 before
+                          any request  (lium#149, not released)
   --lat FLOAT             Latitude for distance filtering
   --lon FLOAT             Longitude for distance filtering
   --max-distance INTEGER  Maximum distance in miles from --lat/--lon
@@ -174,6 +179,7 @@ lium ls --gpu H100              # only H100 nodes
 lium ls --gpu H100 --count 8    # only 8×H100 nodes
 lium ls --format json           # JSON output for parsing
 lium ls --sort price_per_gpu_hour --limit 10
+lium ls --gpu H200 --nvlink --min-download 2000   # NVLink boards with a Download floor — lium#149, not released
 ```
 
 The table and JSON carry no interconnect field; `download_mbps` and `upload_mbps` are smoothed
@@ -182,6 +188,19 @@ speed-test average, and neither is CDN throughput. Before a tensor-parallel or
 weight-heavy job on a multi-GPU node, verify on the pod: `nvidia-smi topo -m` (all
 off-diagonal GPU cells `NV#`), `nvidia-smi topo -p2p r` (all `OK`) and a timed download —
 see "Before You Rent 8 GPUs" in SKILL.md.
+
+**lium#149, not released:** the table gains **Link** (how the node's GPUs are wired, as its
+validator saw with `nvidia-smi topo -m`: `NV18` = NVLink with 18 links, `PCIe/SYS` = PCIe only;
+`—` until reported) after Config. A terminal narrower than about 120 columns hides it (the
+footer says so); `--format json` always carries it. Download/Upload stay the speed-test figures;
+there is no CDN column. `--format json` rows gain `link`, `nvlink`, `p2p` and `interconnect`
+(counts and the GPU×GPU matrix), all `null` until the node's validator reports them. Both filters
+are sent to the API and applied client-side too; when nothing is left the message is
+`No available node reports NVLink between every GPU pair and Download ≥ 2000 Mbps`, followed by
+each filter's rule. `lium describe` shows the same as Link / Topology rows, a Net row with the
+speed-test figures, and `gpu.link`, `gpu.p2p`, `gpu.interconnect`, `machine.download_mbps` in
+`--json`. Until lium#149 ships, verify on the pod (`nvidia-smi topo -m`, `nvidia-smi topo -p2p r`,
+a timed download).
 
 ## lium up
 
