@@ -400,12 +400,12 @@ Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting 
 #### `-y` Exists on the Destructive Commands
 
 `lium rm`, `lium up`, `lium fund`, `lium volumes rm`, `lium bk set/rm/restore` all
-take `-y, --yes`. No piped `yes` is needed:
+take `-y, --yes`. A piped `yes` is not approval — always pass `-y`:
 
 ```bash
-lium rm my-pod         # will prompt for confirmation
 lium rm my-pod -y      # non-interactive
 lium rm -a -y          # remove all pods non-interactively
+lium rm my-pod         # without a terminal: names the pod, exits 2, removes nothing (lium#246, not released)
 ```
 
 #### Templates
