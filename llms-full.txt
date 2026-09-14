@@ -573,8 +573,11 @@ not there). Work runs **detached** and is polled; results are pulled with
 export LIUM_API_KEY=sk_...           # non-interactive auth; beats ~/.lium/config.ini
 NAME=job-$(date +%s)
 
-# 1. Pick hardware from JSON, not from the table, and keep the node's id (the UUID) for step 2:
-#    `lium up --gpu H200 -c 8` would pick a node on its own (the first Pareto row, any tier, any price).
+# 1. Pick hardware from JSON, not from the table, and keep the node's id (the UUID) for step 2.
+#    Pick from ls yourself only when you need a filter `up --gpu` lacks (here: tier and a price sort).
+#    Otherwise rent by spec (`lium up --gpu H200 -c 8`, see Non-Interactive Pod Creation): since 0.0.39 the backend
+#    picks the cheapest node; 0.0.37/0.0.38 pick the first Pareto row locally. A node you pick here may be
+#    taken by step 2 — the `||` cleanup there covers that.
 NODE=$(lium ls --gpu H200 --count 8 --format json | jq -c 'map(select(.tier=="secure")) | sort_by(.price_per_gpu_hour) | .[0]')
 [ "$NODE" != null ] || { echo "no secure-tier 8×H200 node is listed"; exit 1; }
 jq -r '"\(.huid) \(.config) $\(.price_per_hour)/h \(.country)"' <<<"$NODE"
@@ -658,8 +661,8 @@ lium exec "$NAME" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheade
 
 If either number is below what you asked for, `lium rm` the pod immediately and
 rent again (another executor: pass its `id` from `lium ls --format json` as
-`NODE_ID`; the released CLI, 0.0.37 and earlier, rejects the HUID — lium#153, not
-released, changes that). Keep the `nvidia-smi -L` output; it is the evidence for
+`NODE_ID`; no release so far accepts the HUID, 0.0.46 included — lium#153, still
+open, changes that). Keep the `nvidia-smi -L` output; it is the evidence for
 a refund.
 
 ### Pod Gotchas — The First Hour
@@ -793,7 +796,7 @@ probe with `lium <cmd> --help` before relying on a flag you do not see here.
 - Detach long jobs by hand: `nohup setsid ... > log 2>&1 < /dev/null &` through `lium exec`.
 - Template ids: `curl .../api/templates` or `Lium().templates()`.
 - Machine-readable output: `--format json` on `ps`/`ls`, `--json` on `balance`/`exec`/`describe`/`audit`. `lium ps --format json` carries `ssh_command` ready to run, next to the `ssh_cmd` the one-liners above parse.
-- A 401/403 means the wrong key: check `LIUM_API_KEY` against `~/.lium/config.ini` yourself.
+- A bad or revoked key exits `3` — prove the key with `lium balance` (see No User Identity Command). A 403 on rent exits `6` and means Insufficient balance, not a bad key (see Before the First Rental — Balance).
 - Never wait for a prompt: pass `-y`, `--no-ssh` and every argument up front.
 - SDK: see the SDK reference's agent recipe for `up` → `wait_ready` → `exec` → `down`.
 
@@ -2328,7 +2331,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Lium Recipes for Agents
 
-Copy-paste jobs against the released lium CLI (0.0.37). Each one follows the playbook in
+Copy-paste jobs against the released lium CLI (0.0.37 as the baseline). Each one follows the playbook in
 `SKILL.md`: unique name, `--ttl`, GPU-count check, `/workspace` for everything,
 detached work, results pulled with `rsync`, and a teardown that is confirmed with
 `lium ps`. Replace the GPU type, count and model to taste. All of them assume
