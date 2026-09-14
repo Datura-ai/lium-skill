@@ -598,9 +598,8 @@ lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 lium ps --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 ```
 
-Never read node ids or prices off the `lium ls` table. When stdout is not a terminal the table
-is rendered 80 columns wide, and at that width it has no **Id** column, no row index, and the
-price cell is truncated to `0…`; the Id and Location columns only appear from about 130
+Never read node ids or prices off the `lium ls` table: it shows the HUID, which `lium up`
+rejects, and CLIs before 0.0.40 also drop the **Id** column and truncate prices to `0…` at 80
 columns. The JSON has every field: `id` (UUID — what `lium up` accepts), `huid` (the short
 name the table shows; not accepted by `lium up` in any release so far, 0.0.46
 included — lium#153 fixes it, still open), `price_per_hour`,
