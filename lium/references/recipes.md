@@ -1,6 +1,6 @@
 # Lium Recipes for Agents
 
-Copy-paste jobs against the released lium CLI (0.0.37). Each one follows the playbook in
+Copy-paste jobs against the released lium CLI (0.0.37 as the baseline). Each one follows the playbook in
 `SKILL.md`: unique name, `--ttl`, GPU-count check, `/workspace` for everything,
 detached work, results pulled with `rsync`, and a teardown that is confirmed with
 `lium ps`. Replace the GPU type, count and model to taste. All of them assume
