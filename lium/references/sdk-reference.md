@@ -196,7 +196,7 @@ run.close()          # remove the warm pod now
 | `template_id` | str, optional | Docker template to rent with (default: the node's default template) |
 | `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
-| `cleanup` | bool, default True | `False` skips the `down()` after the call; the pod still goes at its scheduled removal time |
+| `cleanup` | bool, default True | `False` skips the `down()` after the call and turns off pod reuse (`keep_warm`, and `f.map()` rents one pod per item); each pod still goes at its scheduled removal time |
 | `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; since 0.0.40, lium#208) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
