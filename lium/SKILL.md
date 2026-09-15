@@ -762,13 +762,6 @@ bill grows.
 - Keep the `nvidia-smi -L` and `lium ps --format json` snapshots from step 3 of
   the playbook; billing disputes need them.
 
-### Recipes
-
-Copy-paste jobs, each ending in a teardown, in
-[references/recipes.md](references/recipes.md): vLLM / SGLang serving on 8 GPUs,
-best-of-N image/video diffusion with one process per GPU, RL / simulation,
-a batch data job, and the "verify what you paid for" check as a script.
-
 ### Only What the Released CLI Has
 
 This skill describes the released CLI, 0.0.37 as the baseline, with later releases marked where they differ, and nothing that is not released;
@@ -963,4 +956,3 @@ Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH
 
 - **Full CLI command reference**: [references/cli-commands.md](references/cli-commands.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md) — all commands, flags, volumes, backups, scheduling, port-forward, etc.
 - **Python SDK reference**: [references/sdk-reference.md](references/sdk-reference.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md) — programmatic access via `lium.sdk.Lium` (real signatures, models, exceptions), an end-to-end agent recipe, and the `@machine` decorator.
-- **Recipes**: [references/recipes.md](references/recipes.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/recipes.md) — copy-paste jobs with teardown: GPU-count verification script, vLLM/SGLang serving on 8 GPUs, best-of-N diffusion, RL/simulation, batch data.
