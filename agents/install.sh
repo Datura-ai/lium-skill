@@ -62,7 +62,6 @@ FILES=(
   "lium/SKILL.md"
   "lium/references/cli-commands.md"
   "lium/references/sdk-reference.md"
-  "lium/references/recipes.md"
 )
 
 install_into() {
