@@ -271,9 +271,13 @@ For fallback options, the user must get an API key from https://lium.io Account 
 ### Verify Setup
 
 ```bash
-lium config show   # check stored config
-lium balance       # prints a balance -> auth works
+lium balance       # prints a balance -> auth works; an error -> it does not
 ```
+
+Do not run `lium config show` (or `lium config get api.api_key`) to check the setup: both
+print the API key in full, and anything an agent prints ends up in its transcript and logs.
+`lium balance` proves the key works without ever showing it. If you must confirm where the key
+is stored, check that `~/.lium/config.ini` exists.
 
 ### Non-Interactive Pod Creation
 
@@ -342,9 +346,10 @@ lium exec <pod> "curl -L -o /dev/null -sS --max-time 20 -w '%{http_code} %{speed
 Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB checkpoint is
 4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
 0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
-the controlling machine. An `interconnect` field, a CDN-measured ingress/egress figure and
-`--nvlink` / `--min-ingress` filters are being added to the API and `lium ls`; until your
-CLI shows a **Link** column, these commands are the check.
+the controlling machine. An `interconnect` field and a CDN-measured ingress/egress figure
+are coming with lium-platform#61, and `lium ls` filters for NVLink and minimum ingress with
+lium#149; neither is released. Until your CLI shows a **Link** column, these commands are
+the check.
 
 ### Non-Interactive Funding
 
@@ -590,6 +595,13 @@ Always use `--format json` when parsing output programmatically:
 lium ls --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 lium ps --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 ```
+
+Never read node ids or prices off the `lium ls` table: it shows the HUID, which `lium up`
+rejects, and CLIs before 0.0.40 also drop the **Id** column and truncate prices to `0…` at 80
+columns. The JSON has every field: `id` (UUID — what `lium up` accepts), `huid` (the short
+name the table shows; not accepted by `lium up` in any release so far, 0.0.46
+included — lium#153 fixes it, still open), `price_per_hour`,
+`price_per_gpu_hour`, `gpu_count`, `download_mbps`, `upload_mbps`, `country`.
 
 `--format [table|json]` exists on `lium ls` and `lium ps`. `--json` — a plain flag,
 not a format choice — is taken by `lium exec`, `lium fund`, `lium balance`,
