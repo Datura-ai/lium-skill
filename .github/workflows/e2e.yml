@@ -1,0 +1,29 @@
+name: e2e
+
+# The skill against the real CLI on every PR (no paths filter: a README-only PR gets the check too, so it can be
+# required): every documented `lium …` line parses, agents/install.sh installs this checkout for the three agents,
+# and `lium ls --format json` answers from the public feed with the fields the skill names. scripts/e2e.sh.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 6 * * *'   # a CLI release can make the skill stale without a PR here
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: the released lium CLI
+        run: uv tool install lium.io && echo "$HOME/.local/bin" >> "$GITHUB_PATH" && "$HOME/.local/bin/lium" --version
+      - name: documented commands parse, install.sh installs this checkout, ls --format json answers
+        timeout-minutes: 10
+        run: ./scripts/e2e.sh

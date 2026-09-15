@@ -1,0 +1,3 @@
+# Flags the skill documents ahead of the CLI release that ships them: `subcommand|--flag|PR or ticket that removes this line`.
+# scripts/check-cli-examples.py accepts a line only for the named subcommand (`*` = any). `subcommand|*|PR` allows a
+# subcommand the released CLI does not have yet. Keep this list short and dated; drop a block when its PR is released.
