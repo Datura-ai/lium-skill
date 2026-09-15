@@ -369,7 +369,7 @@ nothing matched `TARGETS`, so a typo cannot look like a successful teardown.
 lium rm [OPTIONS] [TARGETS]
   TARGETS    Pod name(s)/ID(s), index/indices, comma-separated list, or "all"
   -a, --all  Remove all active pods
-  -y, --yes  Skip the confirmation prompt
+  -y, --yes  Skip the confirmation prompt; required when stdin is not a terminal
   --in TEXT  Schedule the removal after a duration (e.g. 6h)
   --at TEXT  Schedule the removal at a time (e.g. "tomorrow 01:00")
 ```
@@ -377,12 +377,16 @@ lium rm [OPTIONS] [TARGETS]
 `--in` and `--at` **schedule** a removal rather than filtering which pods to
 remove; cancel a scheduled one with [`lium schedules rm`](#lium-schedules).
 
-**Agent usage** — `-y` exists, no piped `yes` needed:
+**Agent usage** — pass `-y` on every `rm`. Without a terminal on stdin (or with
+`LIUM_NONINTERACTIVE=1`) and without `-y`, the command names the pods it would
+have removed and the command to re-run, exits 2 (`confirmation_required`) and
+removes or schedules nothing; a piped `yes` is not approval (lium#246, not
+released; up to lium 0.0.41 a piped `lium rm my-pod` removed the pod).
 ```bash
-lium rm my-pod -y        # single pod
-lium rm -a -y            # all pods
-lium rm 1,2,3 -y         # several by index
-lium rm my-pod --in 6h   # schedule removal in six hours
+lium rm my-pod -y           # single pod
+lium rm -a -y               # all pods
+lium rm 1,2,3 -y            # several by index
+lium rm my-pod --in 6h -y   # schedule removal in six hours
 ```
 
 ## lium logs
