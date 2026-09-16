@@ -597,10 +597,10 @@ lium ps --format json | python -c "import json,sys; print(json.load(sys.stdin))"
 ```
 
 Never read node ids or prices off the `lium ls` table: it shows the HUID, which `lium up`
-rejects, and CLIs before 0.0.40 also drop the **Id** column and truncate prices to `0…` at 80
-columns. The JSON has every field: `id` (UUID — what `lium up` accepts), `huid` (the short
-name the table shows; not accepted by `lium up` in any release so far, 0.0.46
-included — lium#153 fixes it, still open), `price_per_hour`,
+before 0.3.0 rejects, and CLIs before 0.0.40 also drop the **Id** column and truncate prices to `0…` at 80
+columns. The JSON has every field: `id` (UUID — what every `lium up` accepts), `huid` (the short
+name the table shows; accepted by `lium up` since 0.3.0 (lium#153), refused by every
+release before it, 0.2.0 included), `price_per_hour`,
 `price_per_gpu_hour`, `gpu_count`, `download_mbps`, `upload_mbps`, `country`.
 
 `--format [table|json]` exists on `lium ls` and `lium ps`. `--json` — a plain flag,
