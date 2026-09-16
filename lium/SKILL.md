@@ -608,12 +608,17 @@ python3 -m venv --system-site-packages /workspace/venv
 EOF
 lium exec "$NAME" --script setup.sh
 
-# 5. Start the job detached (capture the PID from --json), then poll
+# 5. Start the job detached (capture the PID from --json), then poll. The wrapper writes train.py's exit
+#    code to /workspace/logs/exit_code when it ends, so step 6 can tell a finished job from a crashed one.
 lium scp "$NAME" ./train.py /workspace/train.py
-PID=$(lium exec "$NAME" --json "cd /workspace && HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid /workspace/venv/bin/python train.py > /workspace/logs/train.log 2>&1 < /dev/null & echo \$!" | jq -r '.results[0].stdout' | tr -d '[:space:]')
+#    `cd …;` not `cd … &&`: `&` after an and-list backgrounds the whole list in a subshell that keeps the
+#    SSH session's stdout, and `lium exec` would then wait for the job instead of returning the PID.
+PID=$(lium exec "$NAME" --json "cd /workspace; HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid bash -c '/workspace/venv/bin/python train.py > /workspace/logs/train.log 2>&1; echo \$? > /workspace/logs/exit_code' > /dev/null 2>&1 < /dev/null & echo \$!" | jq -r '.results[0].stdout' | tr -d '[:space:]')
 # The remote always exits 0 here, so a failed `lium exec` is lium's own error: exit 5 = the pod is gone
-# (TTL fired, removed elsewhere), anything else an API/SSH hiccup to retry — never "job finished".
-[ -n "$PID" ] || { echo "no PID came back; the job did not start"; lium exec "$NAME" "tail -n 20 /workspace/logs/train.log"; lium rm "$NAME" -y; exit 1; }
+# (TTL fired, removed elsewhere), anything else an API/SSH hiccup to retry — never "job finished". An empty
+# PID does not mean the job did not start: the command may have reached the pod before the hiccup, so look
+# before you remove anything.
+[ -n "$PID" ] || { echo "no PID came back; check the pod before retrying:"; lium exec "$NAME" "pgrep -af '[p]ython train.py'; tail -n 20 /workspace/logs/train.log"; exit 1; }
 while :; do
   OUT=$(lium exec "$NAME" --json "kill -0 $PID 2>/dev/null && echo running || echo finished"); rc=$?   # lium's own exit, before any pipe
   [ "$rc" -eq 5 ] && { echo "pod gone (TTL or removal)"; exit 1; }
@@ -625,10 +630,16 @@ while :; do
   sleep 60
 done
 
-# 6. Pull results (no -z for binary output; resumable), then tear down and confirm
+# 6. Pull results and logs (no -z for binary output; resumable); tear down only when both the pull and the
+#    job succeeded. A failed rsync or a non-zero exit code keeps the pod, and the pod keeps billing until
+#    you `lium rm` it yourself, so look at logs/train.log and decide.
+EXIT_CODE=$(lium exec "$NAME" --json "cat /workspace/logs/exit_code" | jq -r '.results[0].stdout' | tr -d '[:space:]')
 SSH_COMMAND=$(lium ps "$NAME" --format json | jq -r '.[0].ssh_command')   # read it again: a restart can move host or port; ssh -p <port> <pinned host-key options> root@<host>
 rsync -a --partial --inplace --progress -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
-  "${SSH_COMMAND##* }:/workspace/out/" ./out/
+  "${SSH_COMMAND##* }:/workspace/out/" ./out/ || { echo "rsync failed; pod kept for a retry"; exit 1; }
+rsync -a --partial --inplace --progress -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+  "${SSH_COMMAND##* }:/workspace/logs/" ./logs/ || { echo "rsync of logs failed; pod kept for a retry"; exit 1; }
+[ "$EXIT_CODE" = 0 ] || { echo "train.py exited with $EXIT_CODE (see logs/train.log); pod kept, still billing"; exit 1; }
 lium rm "$NAME" -y
 lium ps --format json | jq 'length'   # 0 → nothing left billing
 ```
@@ -659,8 +670,8 @@ lium exec "$NAME" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheade
 
 If either number is below what you asked for, `lium rm` the pod immediately and
 rent again (another executor: pass its `id` from `lium ls --format json` as
-`NODE_ID`; no release so far accepts the HUID, 0.0.46 included — lium#153, still
-open, changes that). Keep the `nvidia-smi -L` output; it is the evidence for
+`NODE_ID`; `lium up` accepts the HUID since 0.3.0 (lium#153) and rejects it in every
+release before that). Keep the `nvidia-smi -L` output; it is the evidence for
 a refund.
 
 ### Pod Gotchas — The First Hour
@@ -747,7 +758,7 @@ into a CSV on the pod as soon as the job starts; it is also your evidence when a
 job stalls or a GPU is missing.
 
 ```bash
-lium exec "$NAME" "mkdir -p /workspace/logs && nohup setsid nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used,memory.total,power.draw --format=csv -l 60 > /workspace/logs/gpu.csv 2>&1 < /dev/null & echo \$!"
+lium exec "$NAME" "mkdir -p /workspace/logs; nohup setsid nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used,memory.total,power.draw --format=csv -l 60 > /workspace/logs/gpu.csv 2>&1 < /dev/null & echo \$!"
 lium exec "$NAME" "tail -n 8 /workspace/logs/gpu.csv"      # one line per GPU per minute
 lium exec "$NAME" "nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv,noheader"   # one-shot
 ```
