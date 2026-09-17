@@ -42,7 +42,8 @@ it has to be `lium.exec(pod, command="nvidia-smi")`.
 
 | Method | Description |
 |--------|-------------|
-| `ls(*, gpu_type=, gpu_count=, lat=, lon=, max_distance_miles=)` | List available executors |
+| `ls(*, gpu_type=, gpu_count=, lat=, lon=, max_distance_miles=, min_cuda_version=)` | List available executors |
+| `ls(…, nvlink=True, min_download_mbps=2000)` | Only nodes whose validator saw every GPU pair on NVLink / whose Download (Mbps, the `lium ls` figure) is at least that; unreported nodes excluded; sent to the API and applied client-side too *(since 0.4.0)* |
 | `ps()` | List active pods |
 | `pod(pod_id)` | Get pod details |
 | `get_executor(executor_id)` | Get executor details |
@@ -278,6 +279,8 @@ asyncio.run(main())
 | `status` | `str` | Availability status |
 | `docker_in_docker` | `bool` | DinD support |
 | `ip` | `str` | Machine IP |
+| `interconnect` / `nvlink` | `dict` / `bool` (both `None` until reported) | How the GPUs are wired (`nvidia-smi topo -m` summary: `gpu_pairs`, `nvlink_pairs`, `nvlink_links`, `pcie_class`, `p2p`, `matrix`) and the NVLink verdict *(since 0.4.0)* |
+| `link` / `p2p` | properties | `"NV18"` / `"PCIe/SYS"` / `None`; every GPU pair can read the other's memory *(since 0.4.0)* |
 
 ### Executor (low-level SDK)
 
