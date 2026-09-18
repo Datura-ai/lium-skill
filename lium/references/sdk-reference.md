@@ -78,6 +78,7 @@ retrying yourself.
 | Method | Returns | Notes |
 |--------|---------|-------|
 | `ls(*, gpu_type=None, gpu_count=None, lat=None, lon=None, max_distance_miles=None, min_cuda_version=None)` | `list[ExecutorInfo]` | `gpu_type` is a short name (`"H200"`, `"RTX4090"`); `gpu_count` matches nodes with exactly that many GPUs. No country or price filter — filter the list yourself. |
+| `ls(…, nvlink=True, min_download_mbps=2000)` | `list[ExecutorInfo]` | Only nodes whose validator saw every GPU pair on NVLink / whose Download (Mbps, the `lium ls` figure) is at least that; unreported nodes excluded; sent to the API and applied client-side too *(since 0.4.0, lium#149)*. |
 | `get_executor(executor_id)` | `ExecutorInfo \| None` | Linear scan of `ls()` by UUID. |
 | `gpu_types()` | `set[str]` | Machine names advertised by `/machines`. |
 | `ps()` | `list[PodInfo]` | Your pods. `executor.price_per_hour` is the pod's billed $/h. |
@@ -277,7 +278,7 @@ run.close()          # remove the warm pod now
 | `template_id` | str, optional | Docker template to rent with (default: the node's default template) |
 | `timeout` | float, default 3600 | seconds the function may run; `None` = no process limit. Pod removal is scheduled at `timeout + 15 min` (plus `keep_warm`), or 24 h when `timeout=None` |
 | `keep_warm` | float, default 0 | seconds the pod stays after a call for the next one (also from the next run of the script); removal re-armed to `keep_warm + 2 min` after each call |
-| `cleanup` | bool, default True | `False` skips the `down()` after the call and turns off pod reuse (`keep_warm`, and `f.map()` rents one pod per item); each pod still goes at its scheduled removal time |
+| `cleanup` | bool, default True | `False` skips the `down()` after the call and turns off pod reuse: `keep_warm` has no effect, no pod is kept for the next call, and `f.map()` rents one pod per item. Each pod still goes at its scheduled removal time |
 | `local` | bool, default False | run in-process (`LIUM_MACHINE_LOCAL=1` does it for every function; since 0.0.40, lium#208) |
 | `quiet` | bool, default False | suppress the `[lium]` progress lines on stderr |
 
@@ -328,6 +329,8 @@ Plain dataclasses (`lium.sdk.models`). Convert with `dataclasses.asdict(obj)`.
 | `max_cuda_version` | `float \| None` | Driver's CUDA ceiling, e.g. `13.0` |
 | `tier` | `str \| None` | `"secure"` or `"spot"` (reclaimable) |
 | `available_gpu_count` | `int \| None` | GPUs still free on a node that is partly rented (GPU splitting); `None` when the API did not say |
+| `interconnect` / `nvlink` | `dict` / `bool` (both `None` until reported) | How the GPUs are wired (`nvidia-smi topo -m` summary: `gpu_pairs`, `nvlink_pairs`, `nvlink_links`, `pcie_class`, `p2p`, `matrix`) and the NVLink verdict *(since 0.4.0)* |
+| `link` / `p2p` | properties | `"NV18"` / `"PCIe/SYS"` / `None`; every GPU pair can read the other's memory *(since 0.4.0)* |
 
 Properties: `driver_version` (str), `gpu_model` (first GPU's full name from specs).
 
