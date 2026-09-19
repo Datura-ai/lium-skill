@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.lium.docs/lium-docs",
+  "title": "Lium Docs",
+  "description": "Search and read the Lium (lium.io) GPU marketplace docs: renting pods, CLI, SDK, API, providers.",
+  "version": "1.0.0",
+  "websiteUrl": "https://docs.lium.io",
+  "repository": {
+    "url": "https://github.com/Datura-ai/lium-skill",
+    "source": "github",
+    "id": "1180907775",
+    "subfolder": "mcp"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://docs.lium.io/mcp"
+    }
+  ]
+}
