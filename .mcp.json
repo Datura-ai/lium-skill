@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lium-docs": {
+      "type": "http",
+      "url": "https://docs.lium.io/mcp"
+    }
+  }
+}
