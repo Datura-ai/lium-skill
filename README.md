@@ -1,7 +1,12 @@
 # lium-skill
 
+[![skills.sh installs](https://skills.sh/b/Datura-ai/lium-skill)](https://skills.sh/Datura-ai/lium-skill)
+[![Agent Skills standard](https://img.shields.io/badge/Agent%20Skills-SKILL.md-blue)](https://agentskills.io)
+[![Docs MCP](https://img.shields.io/badge/MCP-docs.lium.io%2Fmcp-2ea44f)](https://docs.lium.io/developers/mcp)
+[![CLI on PyPI](https://img.shields.io/pypi/v/lium.io?label=lium%20CLI%20on%20PyPI)](https://pypi.org/project/lium.io/)
+
 The `lium` agent skill — teaches an AI coding agent to rent GPUs and manage pods
-on [Lium](https://lium.io), agent-first compute: a decentralized GPU rental platform on Bittensor.
+on [Lium (lium.io)](https://lium.io), agent-first compute: a decentralized GPU rental marketplace on Bittensor Subnet 51.
 
 ## Install
 
@@ -57,8 +62,14 @@ on any difference:
 ./scripts/build-llms-full.sh
 ```
 
+## Where the skill is listed
+
+- [skills.sh](https://skills.sh/Datura-ai/lium-skill) — the Agent Skills directory; the badge above is its install count
+- The docs MCP endpoint `llms.txt` names, `https://docs.lium.io/mcp` (tools `search`, `read_page`), is described at https://docs.lium.io/developers/mcp
+
 ## Links
 
 - Docs: https://docs.lium.io
 - CLI: https://github.com/Datura-ai/lium
 - PyPI: https://pypi.org/project/lium.io/
+- Live GPU prices (no account): https://lium.io/pricing · https://lium.io/pricing.json
