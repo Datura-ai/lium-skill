@@ -356,7 +356,7 @@ Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB ch
 4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
 0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
 the controlling machine. An `interconnect` field and a CDN-measured ingress/egress figure
-are coming with lium-platform#61, and `lium ls` filters for NVLink and minimum ingress with
+are coming on the platform side, and `lium ls` filters for NVLink and minimum ingress with
 lium#149; neither is released. Until your CLI shows a **Link** column, these commands are
 the check.
 
@@ -405,7 +405,7 @@ and exits `0` when no node matches). Prefer the machine-readable modes
 result there: `--json` commands put a failure on stderr as one JSON object,
 `{"ok": false, "error": {...}}`, with stdout empty; `--format json` prints
 `Error: ...` as text. Releases before 0.0.31 printed `Error: ...` and exited `0` on
-most failures (DAH-2593); pin `lium>=0.0.31` when a script branches on `$?`.
+most failures; pin `lium>=0.0.31` when a script branches on `$?`.
 
 #### Pod Targeting — Prefer Names
 

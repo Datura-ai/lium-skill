@@ -385,8 +385,8 @@ With `--json` the command never prompts for setup, so it is safe in scripts.
 **Since lium 0.0.37.** Who did what to the account's pods, and
 when: every rent, reboot, edit and delete with the session or API key that requested it;
 entries the platform wrote by itself (a validator reply, a balance stop) say `platform`.
-Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208, not
-released); against today's API an API key exits `3` with a hint.
+Needs a backend that serves `GET /users/me/events` to API keys (not
+released yet); against today's API an API key exits `3` with a hint.
 
 ```bash
 lium audit [OPTIONS]                 # since 0.0.37
@@ -894,7 +894,7 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | 5 | Pod not found |
 | 6 | Permission denied — the API answered 403 (an empty balance on `lium up`, for one) |
 
-Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
+Since **0.0.31** (lium#104) every command runs under one error handler
 (`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
 `lium ps` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
 `lium ls` reads the public node list and succeeds with any key, so it is not a key check.

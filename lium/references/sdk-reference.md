@@ -164,7 +164,7 @@ call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_p
 | `topup_currencies(refresh=False)` | `list[dict]` | Stablecoin `{code, network, …}` pairs. |
 | `topup_create_invoice(amount, crypto_currency, crypto_network)` | `dict` | `deposit_address`, `crypto_amount`, `expires_at`, … |
 | `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd)`, `company_wallet(app_id)` | | Bittensor funding plumbing used by `lium fund`. |
-| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; the backend side for API keys is lium-platform#208, not released)* |
+| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; the backend side for API keys is not released yet)* |
 
 ---
 
