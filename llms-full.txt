@@ -358,7 +358,7 @@ Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB ch
 4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
 0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
 the controlling machine. An `interconnect` field and a CDN-measured ingress/egress figure
-are coming with lium-platform#61, and `lium ls` filters for NVLink and minimum ingress with
+are coming on the platform side, and `lium ls` filters for NVLink and minimum ingress with
 lium#149; neither is released. Until your CLI shows a **Link** column, these commands are
 the check.
 
@@ -407,7 +407,7 @@ and exits `0` when no node matches). Prefer the machine-readable modes
 result there: `--json` commands put a failure on stderr as one JSON object,
 `{"ok": false, "error": {...}}`, with stdout empty; `--format json` prints
 `Error: ...` as text. Releases before 0.0.31 printed `Error: ...` and exited `0` on
-most failures (DAH-2593); pin `lium>=0.0.31` when a script branches on `$?`.
+most failures; pin `lium>=0.0.31` when a script branches on `$?`.
 
 #### Pod Targeting — Prefer Names
 
@@ -1373,8 +1373,8 @@ With `--json` the command never prompts for setup, so it is safe in scripts.
 **Since lium 0.0.37.** Who did what to the account's pods, and
 when: every rent, reboot, edit and delete with the session or API key that requested it;
 entries the platform wrote by itself (a validator reply, a balance stop) say `platform`.
-Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208, not
-released); against today's API an API key exits `3` with a hint.
+Needs a backend that serves `GET /users/me/events` to API keys (not
+released yet); against today's API an API key exits `3` with a hint.
 
 ```bash
 lium audit [OPTIONS]                 # since 0.0.37
@@ -1882,7 +1882,7 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | 5 | Pod not found |
 | 6 | Permission denied — the API answered 403 (an empty balance on `lium up`, for one) |
 
-Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
+Since **0.0.31** (lium#104) every command runs under one error handler
 (`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
 `lium ps` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
 `lium ls` reads the public node list and succeeds with any key, so it is not a key check.
@@ -2073,7 +2073,7 @@ call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_p
 | `topup_currencies(refresh=False)` | `list[dict]` | Stablecoin `{code, network, …}` pairs. |
 | `topup_create_invoice(amount, crypto_currency, crypto_network)` | `dict` | `deposit_address`, `crypto_amount`, `expires_at`, … |
 | `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd)`, `company_wallet(app_id)` | | Bittensor funding plumbing used by `lium fund`. |
-| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; the backend side for API keys is lium-platform#208, not released)* |
+| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; the backend side for API keys is not released yet)* |
 
 ---
 
