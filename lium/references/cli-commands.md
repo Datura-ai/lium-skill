@@ -184,7 +184,7 @@ lium ls --gpu H200 --nvlink --min-download 2000   # NVLink boards with a Downloa
 ```
 
 The table and JSON carry no interconnect field; `download_mbps` and `upload_mbps` are smoothed
-averages of the validator's VerifyX check (a fetch of a real object), falling back to the
+averages of Lium's VerifyX check (a fetch of a real object), falling back to the
 speed-test average, and neither is CDN throughput. Before a tensor-parallel or
 weight-heavy job on a multi-GPU node, verify on the pod: `nvidia-smi topo -m` (all
 off-diagonal GPU cells `NV#`), `nvidia-smi topo -p2p r` (all `OK`) and a timed download —
@@ -203,12 +203,12 @@ API key, so it proves nothing about authentication — use `lium balance` for th
 the interactive setup first — `up`, `ps`, `describe`, `logs`, `audit` — start the
 browser auth flow instead.)
 
-**Since 0.4.0 (lium#149):** the table gains **Link** (how the node's GPUs are wired, as its
-validator saw with `nvidia-smi topo -m`: `NV18` = NVLink with 18 links, `PCIe/SYS` = PCIe only;
+**Since 0.4.0 (lium#149):** the table gains **Link** (how the node's GPUs are wired, as
+Lium saw with `nvidia-smi topo -m`: `NV18` = NVLink with 18 links, `PCIe/SYS` = PCIe only;
 `—` until reported) after Config. A terminal narrower than about 120 columns hides it (the
 footer says so); `--format json` always carries it. Download/Upload stay the speed-test figures;
 there is no CDN column. `--format json` rows gain `link`, `nvlink`, `p2p` and `interconnect`
-(counts and the GPU×GPU matrix), all `null` until the node's validator reports them. Both filters
+(counts and the GPU×GPU matrix), all `null` until Lium reports them. Both filters
 are sent to the API and applied client-side too; when nothing is left the message is
 `No available node reports NVLink between every GPU pair and Download ≥ 2000 Mbps`, followed by
 each filter's rule. `lium describe` shows the same as Link / Topology rows, a Net row with the
@@ -384,9 +384,8 @@ With `--json` the command never prompts for setup, so it is safe in scripts.
 
 **Since lium 0.0.37.** Who did what to the account's pods, and
 when: every rent, reboot, edit and delete with the session or API key that requested it;
-entries the platform wrote by itself (a validator reply, a balance stop) say `platform`.
-Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208, not
-released); against today's API an API key exits `3` with a hint.
+entries the platform wrote by itself (a node reply, a balance stop) say `platform`.
+An API key needs the read scope to read `GET /users/me/events`.
 
 ```bash
 lium audit [OPTIONS]                 # since 0.0.37
@@ -733,14 +732,14 @@ lium theme {dark|light}
 
 ## lium fund
 
-Fund the account with TAO — or with free Subnet-51 alpha stake — from a Bittensor
+Fund the account with TAO — or with free alpha stake — from your
 wallet. **Always pass `-y` for agent use.**
 
 ```bash
 lium fund [OPTIONS]
-  -w, --wallet TEXT  Bittensor wallet name to fund from
+  -w, --wallet TEXT  Name of the local wallet to fund from
   -a, --amount TEXT  Amount to fund with (TAO; USD when --alpha)
-  --alpha            Fund with free Subnet-51 alpha stake
+  --alpha            Fund with free alpha stake
   -k, --hotkey TEXT  Origin hotkey the alpha is staked under — SS58 address or
                      wallet hotkey name (required with --alpha)
   --json             Print machine-readable JSON
@@ -894,7 +893,7 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | 5 | Pod not found |
 | 6 | Permission denied — the API answered 403 (an empty balance on `lium up`, for one) |
 
-Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
+Since **0.0.31** (lium#104) every command runs under one error handler
 (`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
 `lium ps` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
 `lium ls` reads the public node list and succeeds with any key, so it is not a key check.

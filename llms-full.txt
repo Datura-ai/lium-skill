@@ -8,7 +8,7 @@ Source of truth: https://github.com/Datura-ai/lium-skill
 
 # Lium CLI & SDK
 
-Lium — agent-first compute: a decentralized GPU rental platform on Bittensor. Pods are Docker containers with root SSH access and direct GPU passthrough.
+Lium — agent-first compute: a GPU rental platform. Pods are Docker containers with root SSH access and direct GPU passthrough.
 
 - **GitHub**: https://github.com/Datura-ai/lium
 - **PyPI**: https://pypi.org/project/lium.io/
@@ -226,8 +226,8 @@ lium balance --json   # {"balance_usd": 5.0}
     -d '{"amount": 20, "crypto_currency": "USDT", "crypto_network": "tron"}'
   ```
 
-- `lium fund -w default -a 10.0 -y` for users with a Bittensor wallet — here `-a` is an amount of
-  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves Subnet-51 alpha the
+- `lium fund -w default -a 10.0 -y` for users with a TAO wallet — here `-a` is an amount of
+  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves alpha the
   user already has staked: `lium fund --alpha -k <hotkey-ss58> -a 10 -y`.
 
 SSH keys need no extra registration — the public key at `ssh.key_path` is registered
@@ -342,7 +342,7 @@ lium exec <pod> -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 -e NCCL_IB_DISABLE=1
 One independent process per GPU (batch inference, best-of-N generation, sweeps) does not
 need the interconnect and runs at full speed on any eight cards.
 
-Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of the validator's
+Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of Lium's
 VerifyX check, which fetches a real object of known size and hash (the speed-test average is
 the fallback when VerifyX has no figure; **Upload** follows the same order). It flags nodes under
 100 Mbps as slow; it does not predict Hugging Face or PyPI throughput. The same
@@ -357,10 +357,9 @@ lium exec <pod> "curl -L -o /dev/null -sS --max-time 20 -w '%{http_code} %{speed
 Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB checkpoint is
 4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
 0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
-the controlling machine. An `interconnect` field and a CDN-measured ingress/egress figure
-are coming with lium-platform#61, and `lium ls` filters for NVLink and minimum ingress with
-lium#149; neither is released. Until your CLI shows a **Link** column, these commands are
-the check.
+the controlling machine. The listing carries an NVLink verdict, and `lium ls` / `lium describe` show interconnect and
+ingress with a **Link** column; `--nvlink` filters for it. On an older CLI without the **Link**
+column, these commands are the check.
 
 ### Non-Interactive Funding
 
@@ -372,7 +371,7 @@ lium fund
 lium fund -w default -a 10.0 -y   # fund 10 TAO, skip confirmation
 ```
 
-User must have a verified Bittensor wallet at https://lium.io/billing.
+User must have a verified TAO wallet at https://lium.io/billing.
 
 ### Agent Gotchas / Known Pitfalls
 
@@ -407,7 +406,7 @@ and exits `0` when no node matches). Prefer the machine-readable modes
 result there: `--json` commands put a failure on stderr as one JSON object,
 `{"ok": false, "error": {...}}`, with stdout empty; `--format json` prints
 `Error: ...` as text. Releases before 0.0.31 printed `Error: ...` and exited `0` on
-most failures (DAH-2593); pin `lium>=0.0.31` when a script branches on `$?`.
+most failures; pin `lium>=0.0.31` when a script branches on `$?`.
 
 #### Pod Targeting — Prefer Names
 
@@ -838,7 +837,7 @@ lium ps                        # list active pods
 lium ps --format json          # machine-readable pod list (ssh_cmd, ports, price, spent)
 lium ps my-pod --format json   # one pod
 lium describe my-pod --json    # full manifest of one pod
-lium audit --since 24h --json  # who did what to your pods — exits 3 auth_error on lium.io today: the backend does not yet serve /users/me/events to API keys (lium-platform#208)
+lium audit --since 24h --json  # who did what to your pods; an API key needs the read scope
 lium ssh my-pod                # SSH into pod (interactive — not for agents)
 lium exec my-pod "nvidia-smi"  # run command
 lium exec all "pip install torch"  # batch exec on all pods
@@ -954,7 +953,7 @@ lium ps                                        # confirm nothing is left billing
 
 ## Run One Python Function on a GPU (no pod scripting)
 
-When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section beyond `machine`, `template_id`, `cleanup` and `requirements` **needs 0.0.40 (lium#208, DAH-3014)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains the string, installs `requirements` into an isolated venv (so torch must be listed there too), matches `machine` as a substring of the node's name (`"H200"`; the `"1xH200"` form is 0.0.40 too), and results must be JSON-serialisable.
+When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section beyond `machine`, `template_id`, `cleanup` and `requirements` **needs 0.0.40 (lium#208)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains the string, installs `requirements` into an isolated venv (so torch must be listed there too), matches `machine` as a substring of the node's name (`"H200"`; the `"1xH200"` form is 0.0.40 too), and results must be JSON-serialisable.
 
 ```python
 import lium
@@ -1172,7 +1171,7 @@ lium ls --gpu H200 --nvlink --min-download 2000   # NVLink boards with a Downloa
 ```
 
 The table and JSON carry no interconnect field; `download_mbps` and `upload_mbps` are smoothed
-averages of the validator's VerifyX check (a fetch of a real object), falling back to the
+averages of Lium's VerifyX check (a fetch of a real object), falling back to the
 speed-test average, and neither is CDN throughput. Before a tensor-parallel or
 weight-heavy job on a multi-GPU node, verify on the pod: `nvidia-smi topo -m` (all
 off-diagonal GPU cells `NV#`), `nvidia-smi topo -p2p r` (all `OK`) and a timed download —
@@ -1191,12 +1190,12 @@ API key, so it proves nothing about authentication — use `lium balance` for th
 the interactive setup first — `up`, `ps`, `describe`, `logs`, `audit` — start the
 browser auth flow instead.)
 
-**Since 0.4.0 (lium#149):** the table gains **Link** (how the node's GPUs are wired, as its
-validator saw with `nvidia-smi topo -m`: `NV18` = NVLink with 18 links, `PCIe/SYS` = PCIe only;
+**Since 0.4.0 (lium#149):** the table gains **Link** (how the node's GPUs are wired, as
+Lium saw with `nvidia-smi topo -m`: `NV18` = NVLink with 18 links, `PCIe/SYS` = PCIe only;
 `—` until reported) after Config. A terminal narrower than about 120 columns hides it (the
 footer says so); `--format json` always carries it. Download/Upload stay the speed-test figures;
 there is no CDN column. `--format json` rows gain `link`, `nvlink`, `p2p` and `interconnect`
-(counts and the GPU×GPU matrix), all `null` until the node's validator reports them. Both filters
+(counts and the GPU×GPU matrix), all `null` until Lium reports them. Both filters
 are sent to the API and applied client-side too; when nothing is left the message is
 `No available node reports NVLink between every GPU pair and Download ≥ 2000 Mbps`, followed by
 each filter's rule. `lium describe` shows the same as Link / Topology rows, a Net row with the
@@ -1372,9 +1371,8 @@ With `--json` the command never prompts for setup, so it is safe in scripts.
 
 **Since lium 0.0.37.** Who did what to the account's pods, and
 when: every rent, reboot, edit and delete with the session or API key that requested it;
-entries the platform wrote by itself (a validator reply, a balance stop) say `platform`.
-Needs a backend that serves `GET /users/me/events` to API keys (lium-platform#208, not
-released); against today's API an API key exits `3` with a hint.
+entries the platform wrote by itself (a node reply, a balance stop) say `platform`.
+An API key needs the read scope to read `GET /users/me/events`.
 
 ```bash
 lium audit [OPTIONS]                 # since 0.0.37
@@ -1721,14 +1719,14 @@ lium theme {dark|light}
 
 ## lium fund
 
-Fund the account with TAO — or with free Subnet-51 alpha stake — from a Bittensor
+Fund the account with TAO — or with free alpha stake — from your
 wallet. **Always pass `-y` for agent use.**
 
 ```bash
 lium fund [OPTIONS]
-  -w, --wallet TEXT  Bittensor wallet name to fund from
+  -w, --wallet TEXT  Name of the local wallet to fund from
   -a, --amount TEXT  Amount to fund with (TAO; USD when --alpha)
-  --alpha            Fund with free Subnet-51 alpha stake
+  --alpha            Fund with free alpha stake
   -k, --hotkey TEXT  Origin hotkey the alpha is staked under — SS58 address or
                      wallet hotkey name (required with --alpha)
   --json             Print machine-readable JSON
@@ -1882,7 +1880,7 @@ There is no `LIUM_SSH_KEY` variable — the SSH key path lives in the config
 | 5 | Pod not found |
 | 6 | Permission denied — the API answered 403 (an empty balance on `lium up`, for one) |
 
-Since **0.0.31** (lium#104, DAH-2593) every command runs under one error handler
+Since **0.0.31** (lium#104) every command runs under one error handler
 (`handle_errors` in `lium/cli/utils.py`), so the table holds for all of them:
 `lium ps` with a revoked key exits `3`; `lium up` with an empty balance exits `6`.
 `lium ls` reads the public node list and succeeds with any key, so it is not a key check.
@@ -1987,7 +1985,7 @@ retrying yourself.
 | Method | Returns | Notes |
 |--------|---------|-------|
 | `ls(*, gpu_type=None, gpu_count=None, lat=None, lon=None, max_distance_miles=None, min_cuda_version=None)` | `list[ExecutorInfo]` | `gpu_type` is a short name (`"H200"`, `"RTX4090"`); `gpu_count` matches nodes with exactly that many GPUs. No country or price filter — filter the list yourself. |
-| `ls(…, nvlink=True, min_download_mbps=2000)` | `list[ExecutorInfo]` | Only nodes whose validator saw every GPU pair on NVLink / whose Download (Mbps, the `lium ls` figure) is at least that; unreported nodes excluded; sent to the API and applied client-side too *(since 0.4.0, lium#149)*. |
+| `ls(…, nvlink=True, min_download_mbps=2000)` | `list[ExecutorInfo]` | Only nodes where Lium saw every GPU pair on NVLink / whose Download (Mbps, the `lium ls` figure) is at least that; unreported nodes excluded; sent to the API and applied client-side too *(since 0.4.0, lium#149)*. |
 | `get_executor(executor_id)` | `ExecutorInfo \| None` | Linear scan of `ls()` by UUID. |
 | `gpu_types()` | `set[str]` | Machine names advertised by `/machines`. |
 | `ps()` | `list[PodInfo]` | Your pods. `executor.price_per_hour` is the pod's billed $/h. |
@@ -2072,8 +2070,8 @@ call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_p
 | `list_ssh_keys()` / `register_ssh_key(*, name, public_key)` | `list[SSHKey]` / `SSHKey` | `up()` calls this for you. |
 | `topup_currencies(refresh=False)` | `list[dict]` | Stablecoin `{code, network, …}` pairs. |
 | `topup_create_invoice(amount, crypto_currency, crypto_network)` | `dict` | `deposit_address`, `crypto_amount`, `expires_at`, … |
-| `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd)`, `company_wallet(app_id)` | | Bittensor funding plumbing used by `lium fund`. |
-| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; the backend side for API keys is lium-platform#208, not released)* |
+| `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd)`, `company_wallet(app_id)` | | TAO and alpha funding plumbing used by `lium fund`. |
+| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; an API key needs the read scope)* |
 
 ---
 
@@ -2162,7 +2160,7 @@ Notes:
 
 Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the result or re-raises the remote exception, removes the pod or keeps it warm.
 
-**Since 0.0.40 (lium#208, DAH-3014).** On 0.0.37–0.0.39 the decorator takes only `machine`, `template_id`, `cleanup` and `requirements`, and its `requirements` go into a plain `python3 -m venv` that does **not** see the image's packages — list torch and every other import there; `timeout`, `keep_warm`, `quiet`, `local`, `.map`/`.local`/`.close`, the venv that sees the image's packages and the result/error semantics below need 0.0.40 — the example as written raises `TypeError` on the older releases.
+**Since 0.0.40 (lium#208).** On 0.0.37–0.0.39 the decorator takes only `machine`, `template_id`, `cleanup` and `requirements`, and its `requirements` go into a plain `python3 -m venv` that does **not** see the image's packages — list torch and every other import there; `timeout`, `keep_warm`, `quiet`, `local`, `.map`/`.local`/`.close`, the venv that sees the image's packages and the result/error semantics below need 0.0.40 — the example as written raises `TypeError` on the older releases.
 
 ```python
 import lium
@@ -2208,7 +2206,7 @@ run.close()          # remove the warm pod now
 [lium] run: pod stays warm 300s
 ```
 
-Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. **Everything above except `machine`, `template_id`, `cleanup` and `requirements` needs 0.0.40 (lium#208, DAH-3014)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains `machine` as a substring (`"H200"` — the `"<count>x<gpu>"` form matches nothing there), installs `requirements` into an isolated venv (torch included, if the function needs it), has no `timeout`/`keep_warm`/`local`/`quiet`, no `.map`/`.local`/`.close`, and results must be JSON-serialisable.
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. **Everything above except `machine`, `template_id`, `cleanup` and `requirements` needs 0.0.40 (lium#208)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains `machine` as a substring (`"H200"` — the `"<count>x<gpu>"` form matches nothing there), installs `requirements` into an isolated venv (torch included, if the function needs it), has no `timeout`/`keep_warm`/`local`/`quiet`, no `.map`/`.local`/`.close`, and results must be JSON-serialisable.
 
 
 ---

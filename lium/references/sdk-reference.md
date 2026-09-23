@@ -78,7 +78,7 @@ retrying yourself.
 | Method | Returns | Notes |
 |--------|---------|-------|
 | `ls(*, gpu_type=None, gpu_count=None, lat=None, lon=None, max_distance_miles=None, min_cuda_version=None)` | `list[ExecutorInfo]` | `gpu_type` is a short name (`"H200"`, `"RTX4090"`); `gpu_count` matches nodes with exactly that many GPUs. No country or price filter — filter the list yourself. |
-| `ls(…, nvlink=True, min_download_mbps=2000)` | `list[ExecutorInfo]` | Only nodes whose validator saw every GPU pair on NVLink / whose Download (Mbps, the `lium ls` figure) is at least that; unreported nodes excluded; sent to the API and applied client-side too *(since 0.4.0, lium#149)*. |
+| `ls(…, nvlink=True, min_download_mbps=2000)` | `list[ExecutorInfo]` | Only nodes where Lium saw every GPU pair on NVLink / whose Download (Mbps, the `lium ls` figure) is at least that; unreported nodes excluded; sent to the API and applied client-side too *(since 0.4.0, lium#149)*. |
 | `get_executor(executor_id)` | `ExecutorInfo \| None` | Linear scan of `ls()` by UUID. |
 | `gpu_types()` | `set[str]` | Machine names advertised by `/machines`. |
 | `ps()` | `list[PodInfo]` | Your pods. `executor.price_per_hour` is the pod's billed $/h. |
@@ -163,8 +163,8 @@ call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_p
 | `list_ssh_keys()` / `register_ssh_key(*, name, public_key)` | `list[SSHKey]` / `SSHKey` | `up()` calls this for you. |
 | `topup_currencies(refresh=False)` | `list[dict]` | Stablecoin `{code, network, …}` pairs. |
 | `topup_create_invoice(amount, crypto_currency, crypto_network)` | `dict` | `deposit_address`, `crypto_amount`, `expires_at`, … |
-| `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd)`, `company_wallet(app_id)` | | Bittensor funding plumbing used by `lium fund`. |
-| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; the backend side for API keys is lium-platform#208, not released)* |
+| `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd)`, `company_wallet(app_id)` | | TAO and alpha funding plumbing used by `lium fund`. |
+| `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; an API key needs the read scope)* |
 
 ---
 
@@ -253,7 +253,7 @@ Notes:
 
 Run one Python function on a GPU pod: rents the cheapest node matching `machine`, ships the function's `def`, installs `requirements` once per pod (on top of the image's own packages — torch is already there on the PyTorch template), streams the function's stdout/stderr live, returns the result or re-raises the remote exception, removes the pod or keeps it warm.
 
-**Since 0.0.40 (lium#208, DAH-3014).** On 0.0.37–0.0.39 the decorator takes only `machine`, `template_id`, `cleanup` and `requirements`, and its `requirements` go into a plain `python3 -m venv` that does **not** see the image's packages — list torch and every other import there; `timeout`, `keep_warm`, `quiet`, `local`, `.map`/`.local`/`.close`, the venv that sees the image's packages and the result/error semantics below need 0.0.40 — the example as written raises `TypeError` on the older releases.
+**Since 0.0.40 (lium#208).** On 0.0.37–0.0.39 the decorator takes only `machine`, `template_id`, `cleanup` and `requirements`, and its `requirements` go into a plain `python3 -m venv` that does **not** see the image's packages — list torch and every other import there; `timeout`, `keep_warm`, `quiet`, `local`, `.map`/`.local`/`.close`, the venv that sees the image's packages and the result/error semantics below need 0.0.40 — the example as written raises `TypeError` on the older releases.
 
 ```python
 import lium
@@ -299,7 +299,7 @@ run.close()          # remove the warm pod now
 [lium] run: pod stays warm 300s
 ```
 
-Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. **Everything above except `machine`, `template_id`, `cleanup` and `requirements` needs 0.0.40 (lium#208, DAH-3014)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains `machine` as a substring (`"H200"` — the `"<count>x<gpu>"` form matches nothing there), installs `requirements` into an isolated venv (torch included, if the function needs it), has no `timeout`/`keep_warm`/`local`/`quiet`, no `.map`/`.local`/`.close`, and results must be JSON-serialisable.
+Measured (6 Sep 2026, 1×RTX 4090 at $0.30/h): cold call ~70 s (~$0.006), warm call ~19 s, `transformers`+`accelerate` install 32 s once per pod. **Everything above except `machine`, `template_id`, `cleanup` and `requirements` needs 0.0.40 (lium#208)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains `machine` as a substring (`"H200"` — the `"<count>x<gpu>"` form matches nothing there), installs `requirements` into an isolated venv (torch included, if the function needs it), has no `timeout`/`keep_warm`/`local`/`quiet`, no `.map`/`.local`/`.close`, and results must be JSON-serialisable.
 
 
 ---
