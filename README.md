@@ -41,6 +41,7 @@ lium init
 | `llms.txt` | Short discovery index for agents |
 | `llms-full.txt` | Self-contained reference, generated from the files above |
 | `scripts/build-llms-full.sh` | Generates `llms-full.txt` (SKILL.md without frontmatter + both references) |
+| `examples/benchmarks/` | Reproducible GPU benchmarks run on Lium pods, with raw results ([vLLM serving, 23 Sep 2026](examples/benchmarks/vllm-2026-09-23/)) |
 | `.github/CODEOWNERS`, `.github/REVIEWING.md` | Who reviews each path and how |
 
 `lium.io/llms.txt` and `lium.io/llms-full.txt` are served from this repo's `main`.

@@ -1,0 +1,9 @@
+{
+ "gpu": "h200",
+ "output_tokens_per_s": 4478.0,
+ "ttft_p50_ms": 727.5,
+ "ttft_p95_ms": 1261.1,
+ "price_usd_per_hour": 3.0,
+ "usd_per_1m_output_tokens": 0.1861,
+ "completed": 512
+}
