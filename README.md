@@ -62,3 +62,7 @@ on any difference:
 - Docs: https://docs.lium.io
 - CLI: https://github.com/Datura-ai/lium
 - PyPI: https://pypi.org/project/lium.io/
+
+## License
+
+MIT, the same license as the [Lium CLI](https://github.com/Datura-ai/lium). See [LICENSE](LICENSE).
