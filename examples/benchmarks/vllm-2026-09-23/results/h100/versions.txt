@@ -1,0 +1,3 @@
+vllm 0.29.0
+torch 2.13.0+cu130
+torch_cuda 13.0
