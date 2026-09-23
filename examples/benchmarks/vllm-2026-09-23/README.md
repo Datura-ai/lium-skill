@@ -16,6 +16,7 @@ Every number below comes from the raw JSON in `results/`, and `run_benchmark.sh`
   [lium.io/pricing.json](https://lium.io/pricing.json), read at 2026-09-23T10:48:49Z (feed `generated_at` 10:44:36Z).
   Prices change. Read the feed again before you compare.
 - All 512 requests completed on every GPU, with 0 failures.
+- Each GPU was run once, at one load point (64 concurrent requests, 1,024 in / 256 out). Run-to-run variance was not measured, so the $ per 1M output tokens comparison holds only at that load; a larger batch or model uses an H200 or B200 more fully, and the ranking can change.
 - 8× B300 was not measured in this run.
 
 ## What was measured
@@ -32,8 +33,8 @@ Every number below comes from the raw JSON in `results/`, and `run_benchmark.sh`
 | Seed | 42 (server and prompt sampling) |
 | Pod image | Lium's default `Pytorch (Cuda + DinD)` template |
 
-A run is one pass after the server is healthy. The server compiles kernels and captures CUDA graphs at start-up,
-so the first request is not part of the timing.
+A run is one pass after the server is healthy. No explicit warm-up requests are sent; only `vllm bench serve`'s
+untimed initial test prompt runs before the timed window. Kernel compile and CUDA graph capture happen at server start-up, before that.
 
 ## Reproduce
 
@@ -45,6 +46,9 @@ lium exec vllm-bench -e GPU_LABEL=h100 -e PRICE_PER_HOUR=1.30 --script run_bench
 lium scp -d vllm-bench /root/bench-out/h100/result.json ./result.json
 lium rm vllm-bench -y
 ```
+
+`lium up --gpu H100` rents the cheapest matching H100 node, which may not be the measured H100 80GB HBM3; compare your
+`gpu.csv` with `results/h100/gpu.csv` before you compare numbers.
 
 Set `PRICE_PER_HOUR` to the price the pod shows in `lium ps`. The script installs vLLM in a venv, starts the
 server, waits for `/health`, runs the benchmark and writes these files to `/root/bench-out/<GPU_LABEL>/`:
