@@ -355,10 +355,9 @@ lium exec <pod> "curl -L -o /dev/null -sS --max-time 20 -w '%{http_code} %{speed
 Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB checkpoint is
 4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
 0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
-the controlling machine. An `interconnect` field and a CDN-measured ingress/egress figure
-are coming with lium-platform#61, and `lium ls` filters for NVLink and minimum ingress with
-lium#149; neither is released. Until your CLI shows a **Link** column, these commands are
-the check.
+the controlling machine. The listing carries an NVLink verdict, and `lium ls` / `lium describe` show interconnect and
+ingress with a **Link** column; `--nvlink` filters for it. On an older CLI without the **Link**
+column, these commands are the check.
 
 ### Non-Interactive Funding
 
@@ -405,7 +404,7 @@ and exits `0` when no node matches). Prefer the machine-readable modes
 result there: `--json` commands put a failure on stderr as one JSON object,
 `{"ok": false, "error": {...}}`, with stdout empty; `--format json` prints
 `Error: ...` as text. Releases before 0.0.31 printed `Error: ...` and exited `0` on
-most failures (DAH-2593); pin `lium>=0.0.31` when a script branches on `$?`.
+most failures; pin `lium>=0.0.31` when a script branches on `$?`.
 
 #### Pod Targeting — Prefer Names
 
@@ -836,7 +835,7 @@ lium ps                        # list active pods
 lium ps --format json          # machine-readable pod list (ssh_cmd, ports, price, spent)
 lium ps my-pod --format json   # one pod
 lium describe my-pod --json    # full manifest of one pod
-lium audit --since 24h --json  # who did what to your pods — exits 3 auth_error on lium.io today: the backend does not yet serve /users/me/events to API keys (lium-platform#208)
+lium audit --since 24h --json  # who did what to your pods; an API key needs the read scope
 lium ssh my-pod                # SSH into pod (interactive — not for agents)
 lium exec my-pod "nvidia-smi"  # run command
 lium exec all "pip install torch"  # batch exec on all pods
@@ -952,7 +951,7 @@ lium ps                                        # confirm nothing is left billing
 
 ## Run One Python Function on a GPU (no pod scripting)
 
-When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section beyond `machine`, `template_id`, `cleanup` and `requirements` **needs 0.0.40 (lium#208, DAH-3014)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains the string, installs `requirements` into an isolated venv (so torch must be listed there too), matches `machine` as a substring of the node's name (`"H200"`; the `"1xH200"` form is 0.0.40 too), and results must be JSON-serialisable.
+When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section beyond `machine`, `template_id`, `cleanup` and `requirements` **needs 0.0.40 (lium#208)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains the string, installs `requirements` into an isolated venv (so torch must be listed there too), matches `machine` as a substring of the node's name (`"H200"`; the `"1xH200"` form is 0.0.40 too), and results must be JSON-serialisable.
 
 ```python
 import lium
