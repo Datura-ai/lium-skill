@@ -6,7 +6,7 @@ allowed-tools: Bash(lium:*), Bash(curl:*)
 
 # Lium CLI & SDK
 
-Lium — agent-first compute: a decentralized GPU rental platform on Bittensor. Pods are Docker containers with root SSH access and direct GPU passthrough.
+Lium — agent-first compute: a GPU rental platform. Pods are Docker containers with root SSH access and direct GPU passthrough.
 
 - **GitHub**: https://github.com/Datura-ai/lium
 - **PyPI**: https://pypi.org/project/lium.io/
@@ -224,8 +224,8 @@ lium balance --json   # {"balance_usd": 5.0}
     -d '{"amount": 20, "crypto_currency": "USDT", "crypto_network": "tron"}'
   ```
 
-- `lium fund -w default -a 10.0 -y` for users with a Bittensor wallet — here `-a` is an amount of
-  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves Subnet-51 alpha the
+- `lium fund -w default -a 10.0 -y` for users with a TAO wallet — here `-a` is an amount of
+  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves alpha the
   user already has staked: `lium fund --alpha -k <hotkey-ss58> -a 10 -y`.
 
 SSH keys need no extra registration — the public key at `ssh.key_path` is registered
@@ -340,7 +340,7 @@ lium exec <pod> -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 -e NCCL_IB_DISABLE=1
 One independent process per GPU (batch inference, best-of-N generation, sweeps) does not
 need the interconnect and runs at full speed on any eight cards.
 
-Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of the validator's
+Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of Lium's
 VerifyX check, which fetches a real object of known size and hash (the speed-test average is
 the fallback when VerifyX has no figure; **Upload** follows the same order). It flags nodes under
 100 Mbps as slow; it does not predict Hugging Face or PyPI throughput. The same
@@ -370,7 +370,7 @@ lium fund
 lium fund -w default -a 10.0 -y   # fund 10 TAO, skip confirmation
 ```
 
-User must have a verified Bittensor wallet at https://lium.io/billing.
+User must have a verified TAO wallet at https://lium.io/billing.
 
 ### Agent Gotchas / Known Pitfalls
 
