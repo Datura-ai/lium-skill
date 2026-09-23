@@ -28,6 +28,7 @@ Every number below comes from the raw JSON in `results/`, and `run_benchmark.sh`
 | Benchmark | `vllm bench serve` (in vLLM 0.29.0, `benchmarks/benchmark_serving.py` is a stub that points to this command) |
 | Dataset | `random`: 1,024 input tokens and 256 output tokens per request, `--ignore-eos` |
 | Load | 512 prompts, `--max-concurrency 64`, request rate unlimited |
+| Sampling | the model's server-side defaults (vLLM 0.29.0 no longer sends `temperature=0`); `--ignore-eos` fixes the output length |
 | Seed | 42 (server and prompt sampling) |
 | Pod image | Lium's default `Pytorch (Cuda + DinD)` template |
 
@@ -55,6 +56,11 @@ server, waits for `/health`, runs the benchmark and writes these files to `/root
 | `versions.txt` | vLLM, torch and torch CUDA versions |
 | `gpu.csv`, `cuda_driver_version.txt` | GPU name, driver version and the driver's CUDA version |
 
-Override `VLLM_VERSION`, `MODEL`, `TP`, `SEED`, `INPUT_LEN`, `OUTPUT_LEN`, `NUM_PROMPTS` or `MAX_CONCURRENCY` with
-`-e NAME=value` to change the workload. On a pod, the whole run takes about 5 minutes. Most of that time is the
+Override `VLLM_VERSION`, `MODEL`, `TP`, `SEED`, `INPUT_LEN`, `OUTPUT_LEN`, `NUM_PROMPTS`, `MAX_CONCURRENCY` or
+`MAX_MODEL_LEN` (default 4096; it must cover `INPUT_LEN + OUTPUT_LEN`) with `-e NAME=value` to change the workload.
+The script exits non-zero when any request fails. On a pod, the whole run takes about 5 minutes. Most of that time is the
 install and the first-start kernel compile.
+
+Only vLLM is pinned. Its dependencies, torch included, resolve at install time, and `versions.txt` records the
+vLLM, torch and CUDA versions that were used. The `MAX_MODEL_LEN` guard and the failed-request exit were added to
+the script after these runs. With the defaults, the script does the same thing as the version that produced the results.

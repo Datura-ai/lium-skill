@@ -11,12 +11,17 @@ INPUT_LEN="${INPUT_LEN:-1024}"
 OUTPUT_LEN="${OUTPUT_LEN:-256}"
 NUM_PROMPTS="${NUM_PROMPTS:-512}"
 MAX_CONCURRENCY="${MAX_CONCURRENCY:-64}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
 GPU_LABEL="${GPU_LABEL:?set GPU_LABEL, e.g. h100}"
 PRICE_PER_HOUR="${PRICE_PER_HOUR:?set PRICE_PER_HOUR in USD for the whole pod}"
 OUT="${OUT:-/root/bench-out/$GPU_LABEL}"
 VENV="${VENV:-/root/vllm-$VLLM_VERSION}"
 PORT="${PORT:-8000}"
 
+if [ $((INPUT_LEN + OUTPUT_LEN)) -gt "$MAX_MODEL_LEN" ]; then
+  echo "INPUT_LEN + OUTPUT_LEN ($((INPUT_LEN + OUTPUT_LEN))) is above MAX_MODEL_LEN ($MAX_MODEL_LEN); raise MAX_MODEL_LEN" >&2
+  exit 2
+fi
 mkdir -p "$OUT"
 exec > >(tee -a "$OUT/run.log") 2>&1
 
@@ -40,7 +45,7 @@ PY
 
 echo "== start server"
 "$VENV/bin/vllm" serve "$MODEL" \
-  --tensor-parallel-size "$TP" --seed "$SEED" --max-model-len 4096 \
+  --tensor-parallel-size "$TP" --seed "$SEED" --max-model-len "$MAX_MODEL_LEN" \
   --port "$PORT" > "$OUT/server.log" 2>&1 &
 SERVER_PID=$!
 trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
@@ -71,5 +76,7 @@ print(json.dumps({
     "price_usd_per_hour": price,
     "usd_per_1m_output_tokens": round(price / (tok_s * 3600) * 1e6, 4),
     "completed": r["completed"],
+    "failed": r["failed"],
 }, indent=1))
+sys.exit(1 if r["failed"] else 0)
 PY

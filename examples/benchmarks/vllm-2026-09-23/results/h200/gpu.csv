@@ -1,1 +1,2 @@
-NVIDIA H200, 580.178.04
+name, memory.total [MiB], driver_version
+NVIDIA H200, 143771 MiB, 580.178.04
