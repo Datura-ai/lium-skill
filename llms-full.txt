@@ -1726,7 +1726,7 @@ wallet. **Always pass `-y` for agent use.**
 
 ```bash
 lium fund [OPTIONS]
-  -w, --wallet TEXT  Wallet name to fund from
+  -w, --wallet TEXT  Name of the local wallet to fund from
   -a, --amount TEXT  Amount to fund with (TAO; USD when --alpha)
   --alpha            Fund with free alpha stake
   -k, --hotkey TEXT  Origin hotkey the alpha is staked under — SS58 address or
