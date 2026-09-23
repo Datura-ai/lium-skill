@@ -28,7 +28,7 @@ Every number below comes from the raw JSON in `results/`, and `run_benchmark.sh`
 | Benchmark | `vllm bench serve` (in vLLM 0.29.0, `benchmarks/benchmark_serving.py` is a stub that points to this command) |
 | Dataset | `random`: 1,024 input tokens and 256 output tokens per request, `--ignore-eos` |
 | Load | 512 prompts, `--max-concurrency 64`, request rate unlimited |
-| Sampling | the model's server-side defaults (vLLM 0.29.0 no longer sends `temperature=0`); `--ignore-eos` fixes the output length |
+| Sampling | the model's server-side defaults from its `generation_config`; the client sends no temperature; `--ignore-eos` fixes the output length |
 | Seed | 42 (server and prompt sampling) |
 | Pod image | Lium's default `Pytorch (Cuda + DinD)` template |
 
@@ -52,7 +52,7 @@ server, waits for `/health`, runs the benchmark and writes these files to `/root
 | File | Contents |
 |---|---|
 | `result.json` | Raw `vllm bench serve` output, including TPOT and ITL percentiles |
-| `summary.json` | Output tokens/s, TTFT p50/p95 and $ per 1M output tokens |
+| `summary.json` | Output tokens/s, TTFT p50/p95, $ per 1M output tokens, completed and failed request counts |
 | `versions.txt` | vLLM, torch and torch CUDA versions |
 | `gpu.csv`, `cuda_driver_version.txt` | GPU name, driver version and the driver's CUDA version |
 
@@ -63,4 +63,5 @@ install and the first-start kernel compile.
 
 Only vLLM is pinned. Its dependencies, torch included, resolve at install time, and `versions.txt` records the
 vLLM, torch and CUDA versions that were used. The `MAX_MODEL_LEN` guard and the failed-request exit were added to
-the script after these runs. With the defaults, the script does the same thing as the version that produced the results.
+the script after these runs, together with the `failed` key in `summary.json`. The committed `summary.json` files come
+from the earlier version and have no `failed` key; `result.json` shows 0 failed requests for every GPU.
