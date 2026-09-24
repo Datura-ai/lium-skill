@@ -1,12 +1,12 @@
 ---
 name: lium
-description: Agent-first compute — GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads, transferring files to remote GPUs, running code on remote GPUs, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "sign up without an email", "fingerprint", "fingerprint signup", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", any lium CLI command (lium up/ls/ps/ssh/exec/scp/rsync/rm/fund), lium SDK, @machine decorator.
+description: Agent-first compute — GPU pod management on Lium platform via CLI and Python SDK. Use for creating a Lium account, renting GPUs, creating/managing pods, deploying ML workloads (LLM serving, diffusion, RL, batch jobs), transferring files to and from remote GPUs, running long jobs in the background, checking GPU utilisation and cost, verifying the GPU count of a rented pod, and programmatic compute management. Triggers on "lium", "lium.io", "lium-sdk", "create a lium account", "sign up for lium", "sign up without an email", "fingerprint", "fingerprint signup", "lium api key", "GPU rental", "rent a GPU", "GPU pod", "cloud GPU", "remote GPU", "deploy to GPU", "run on 8 GPUs", "vllm on lium", "nvidia-smi on the pod", "pull results from the pod", any lium CLI command (lium up/ls/ps/describe/ssh/exec/scp/rsync/rm/fund/audit), lium SDK, @machine decorator.
 allowed-tools: Bash(lium:*), Bash(curl:*)
 ---
 
 # Lium CLI & SDK
 
-Lium — agent-first compute: a decentralized GPU rental platform on Bittensor. Pods are Docker containers with root SSH access and direct GPU passthrough.
+Lium — agent-first compute: a GPU rental platform. Pods are Docker containers with root SSH access and direct GPU passthrough.
 
 - **GitHub**: https://github.com/Datura-ai/lium
 - **PyPI**: https://pypi.org/project/lium.io/
@@ -224,8 +224,8 @@ lium balance --json   # {"balance_usd": 5.0}
     -d '{"amount": 20, "crypto_currency": "USDT", "crypto_network": "tron"}'
   ```
 
-- `lium fund -w default -a 10.0 -y` for users with a Bittensor wallet — here `-a` is an amount of
-  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves Subnet-51 alpha the
+- `lium fund -w default -a 10.0 -y` for users with a TAO wallet — here `-a` is an amount of
+  **TAO**, not dollars. `-a` means USD only on the `--alpha` path, which moves alpha the
   user already has staked: `lium fund --alpha -k <hotkey-ss58> -a 10 -y`.
 
 SSH keys need no extra registration — the public key at `ssh.key_path` is registered
@@ -296,9 +296,18 @@ lium up --gpu A100 -c 2 --country US -y --no-ssh      # with filters
 lium up --gpu H100 --name my-pod --ttl 6h -y --no-ssh # with name and auto-termination
 lium up --gpu A6000 --image pytorch/pytorch:2.0 -y    # custom docker image (streams logs)
 lium up --gpu H100 --jupyter -y --no-ssh              # with Jupyter
+lium up --gpu H100 -c 8 --name train --ttl 6h --verify-gpus --strict-gpus -y --no-ssh
+                                                      # checks billed + nvidia-smi GPU counts; removes the pod on a mismatch
 ```
 
-Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and, coming with lium#209 — not in 0.0.37, the latest release — `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK) **picks a matching node and rents it in one call**. The backend route that picks the cheapest is live (`GET /version` lists `rent_by_spec`); the released client 0.0.37 does not call it yet and picks locally (the first Pareto-optimal row of `ls()`, not the cheapest) — lium#209 makes `lium up --gpu` and `Lium.rent` use it. Do not `lium ls` first and rent the first row yourself: it is neither the cheapest nor guaranteed still free. On the 0.0.37 SDK, which has no `rent()`, `ls()` + `up(executor_id=)` is the only path — pick by `price_per_hour`, not the first row (example in `references/sdk-reference.md`).
+Rent by spec, not by id: `lium up --gpu <type> [-c N] [--country CC]` (and, since 0.0.39 (lium#209), `Lium.rent(gpu_type=, gpu_count=, min_cpus=, min_vram_gb=, max_price_per_gpu_hour=, …)` in the SDK) **picks a matching node and rents it in one call**. The backend route that picks the cheapest is live (`GET /version` lists `rent_by_spec`); since 0.0.39 (lium#209) `lium up --gpu` and `Lium.rent` use it; 0.0.37/0.0.38 do not call it and pick locally (the first Pareto-optimal row of `ls()`, not the cheapest). Do not `lium ls` first and rent the first row yourself: it is neither the cheapest nor guaranteed still free. On a 0.0.37/0.0.38 SDK, which has no `rent()`, `ls()` + `up(executor_id=)` is the only path — pick by `price_per_hour`, not the first row (example in `references/sdk-reference.md`).
+
+`lium up` exits 0 only when the pod is running (and, with `--verify-gpus`, when
+the GPU counts agree). It exits 1 **with the pod still running and billing** when
+its `--timeout` (default 900 s) runs out while the pod is starting
+(`pod_not_ready`) or when the GPU count is wrong and `--strict-gpus` was not
+given (`gpu_count_mismatch`). After any non-zero exit: `lium ps <name> --format
+json`, and `lium rm <name> -y` if a pod is listed.
 
 ### Before You Rent 8 GPUs — Check Interconnect and Ingress First
 
@@ -331,7 +340,7 @@ lium exec <pod> -e NCCL_P2P_DISABLE=1 -e NCCL_SHM_DISABLE=1 -e NCCL_IB_DISABLE=1
 One independent process per GPU (batch inference, best-of-N generation, sweeps) does not
 need the interconnect and runs at full speed on any eight cards.
 
-Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of the validator's
+Ingress: the **Download (Mbps)** column in `lium ls` is a smoothed average of Lium's
 VerifyX check, which fetches a real object of known size and hash (the speed-test average is
 the fallback when VerifyX has no figure; **Upload** follows the same order). It flags nodes under
 100 Mbps as slow; it does not predict Hugging Face or PyPI throughput. The same
@@ -346,10 +355,9 @@ lium exec <pod> "curl -L -o /dev/null -sS --max-time 20 -w '%{http_code} %{speed
 Do the arithmetic: bytes to download ÷ measured bytes/s. At 45 MB/s a 750 GB checkpoint is
 4.6 h of idle GPU billing; at 1 GB/s it is 12.5 min. Uplink varies as much (30 KB/s vs
 0.5 MB/s seen) — push results from the pod to Hugging Face / S3 directly rather than through
-the controlling machine. An `interconnect` field and a CDN-measured ingress/egress figure
-are coming with lium-platform#61, and `lium ls` filters for NVLink and minimum ingress with
-lium#149; neither is released. Until your CLI shows a **Link** column, these commands are
-the check.
+the controlling machine. The listing carries an NVLink verdict, and `lium ls` / `lium describe` show interconnect and
+ingress with a **Link** column; `--nvlink` filters for it. On an older CLI without the **Link**
+column, these commands are the check.
 
 ### Non-Interactive Funding
 
@@ -361,7 +369,7 @@ lium fund
 lium fund -w default -a 10.0 -y   # fund 10 TAO, skip confirmation
 ```
 
-User must have a verified Bittensor wallet at https://lium.io/billing.
+User must have a verified TAO wallet at https://lium.io/billing.
 
 ### Agent Gotchas / Known Pitfalls
 
@@ -396,28 +404,31 @@ and exits `0` when no node matches). Prefer the machine-readable modes
 result there: `--json` commands put a failure on stderr as one JSON object,
 `{"ok": false, "error": {...}}`, with stdout empty; `--format json` prints
 `Error: ...` as text. Releases before 0.0.31 printed `Error: ...` and exited `0` on
-most failures (DAH-2593); pin `lium>=0.0.31` when a script branches on `$?`.
+most failures; pin `lium>=0.0.31` when a script branches on `$?`.
 
 #### Pod Targeting — Prefer Names
 
-Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting — not a numeric index; indices shift with every listing.
+Use the pod **name** (e.g. `lunar-lion-4c`) from `lium ps` output for targeting — not a numeric index. An index is resolved against the last `lium ps` **in this shell** and refused with `stale_pod_index` when that listing is missing, older than 10 minutes, or no longer shows that pod.
 
 #### `-y` Exists on the Destructive Commands
 
 `lium rm`, `lium up`, `lium fund`, `lium volumes rm`, `lium bk set/rm/restore` all
-take `-y, --yes`. No piped `yes` is needed:
+take `-y, --yes`. A piped `yes` is not approval — always pass `-y`:
 
 ```bash
-lium rm my-pod         # will prompt for confirmation
 lium rm my-pod -y      # non-interactive
 lium rm -a -y          # remove all pods non-interactively
+lium rm my-pod         # without a terminal: names the pod, exits 2, removes nothing (lium#246, not released)
 ```
 
 #### Templates
 
 - Without `--template_id` or `--image`, `lium up` uses default **PyTorch (CUDA)** template — fastest to start
 - Default Docker-in-Docker (dind) template image: `daturaai/dind`
-- Search templates: `lium templates pytorch` (text search, no --format json)
+- Search templates: `lium templates pytorch` (text search; the table has **no id
+  column**; since 0.0.39 (lium#217) `lium templates --format json` / `--json` prints the ids)
+- To get a template id: `curl -s https://lium.io/api/templates -H "X-API-Key: $LIUM_API_KEY" | jq -r '.[] | "\(.id) \(.docker_image):\(.docker_image_tag)"'`
+  or `python -c "from lium.sdk import Lium; [print(t.id, t.docker_image, t.docker_image_tag) for t in Lium().templates('pytorch')]"`
 - To use specific template: `lium up --gpu H100 -t <TEMPLATE_ID> -y`
 - To use custom Docker image: `lium up --gpu H100 --image pytorch/pytorch:2.0 -y`
 
@@ -435,24 +446,25 @@ branches on `$?`.
 
 #### Long-Running Commands Over SSH
 
-`lium exec` runs commands in the foreground over SSH. Commands longer than ~30-60s (e.g. `pip install vllm`, `huggingface-cli download`) may be killed by SSH drop. Wrap with `nohup` + log redirect and poll the log:
+`lium exec` runs the command in the foreground and returns only when **every
+process still holding its stdout/stderr** has exited — a job started with a bare
+`&` keeps `exec` blocked, and a long-running `exec` can also stall when the SSH
+session drops. Detach anything that runs longer than a minute (installs, model
+downloads, training, servers), then poll a log file:
 
 ```bash
-# Start long command in background, detached from SSH session
-# (the \$ escapes for the local shell; the remote sees literal $! which expands to the backgrounded bash PID)
-lium exec my-pod "nohup bash -c 'pip install vllm' </dev/null >/tmp/install.log 2>&1 & echo PID=\$!"
+# Start detached: new session (setsid), immune to hangup (nohup), stdin closed, output to a file.
+# (\$! is escaped for the local shell; the remote prints the background PID.)
+lium exec my-pod "mkdir -p /workspace/logs && nohup setsid bash -lc 'pip install vllm' > /workspace/logs/install.log 2>&1 < /dev/null & echo PID=\$!"
 
-# Watch progress
-lium exec my-pod "tail -f /tmp/install.log"
-# or stream via the logs endpoint if the command writes to stdout of PID 1
-lium logs my-pod --follow
+# Poll — do not `tail -f` through exec, it never returns
+lium exec my-pod "tail -n 20 /workspace/logs/install.log"
+lium exec my-pod "kill -0 <PID> && echo running || echo finished"
 ```
 
-For fully-detached execution (survives SSH session close, stays running after `lium exec` returns):
-
-```bash
-lium exec my-pod "setsid nohup <cmd> </dev/null >/tmp/out.log 2>&1 &"
-```
+`lium logs my-pod --follow` streams the container's PID 1 output only — it does
+not show processes you started via `exec` unless they write to `/proc/1/fd/1`.
+An `exec --detach` flag that does this for you is proposed (lium#211, not released).
 
 #### Stopping a Remote Job — Never `pkill -f` From a One-Liner
 
@@ -475,24 +487,31 @@ lium exec my-pod "pgrep -f 'python train.py' | grep -vx -e \$\$ -e \$PPID"      
 The default `daturaai/pytorch` image is based on Ubuntu 24.04 where system `pip` is PEP 668 protected (`externally-managed-environment`). Use one of:
 
 ```bash
-# Option 1: allow system-wide install
-pip install --break-system-packages <pkg>
+# Option 1: venv on the fast volume (recommended — keeps torch from the image via --system-site-packages)
+python3 -m venv --system-site-packages /workspace/venv && . /workspace/venv/bin/activate && pip install <pkg>
 
-# Option 2: venv (recommended for isolation)
-python -m venv /opt/env && source /opt/env/bin/activate && pip install <pkg>
+# Option 2: uv (fast; a venv under /workspace, or --system)
+curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
+uv venv /workspace/venv --system-site-packages && uv pip install --python /workspace/venv/bin/python <pkg>
 
-# Option 3: uv (fast, handles isolation automatically)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv pip install --system <pkg>
+# Option 3: allow system-wide install (one-off)
+pip install --break-system-packages <pkg>      # or: export PIP_BREAK_SYSTEM_PACKAGES=1
 ```
 
-#### Missing System Libraries in Base Image
+#### Missing System Tools in Base Image
 
-The default GPU base image does not include: `jq`, `htop`, `tmux`, `screen`, `libnuma1`, `git-lfs`, `rsync`. If your workload needs them:
+The default GPU base image does not include `ffmpeg`, `rsync`, `nvcc` (the CUDA
+compiler), `tesseract`, `jq`, `htop`, `tmux`, `screen`, `libnuma1`, `git-lfs`.
+`apt-get` works as root; install what the job needs first:
 
 ```bash
-lium exec my-pod "apt-get update && apt-get install -y libnuma1 jq tmux git-lfs"
+lium exec my-pod "apt-get update -qq && apt-get install -y -qq ffmpeg rsync jq tmux git-lfs libnuma1"
 ```
+
+`rsync` must be present **on the pod** for a plain `rsync` or the SDK's `Lium.rsync()`
+to work; the CLI's `lium rsync` installs it first (`apt-get install -y rsync` when
+`which rsync` fails on the pod). Compiling CUDA extensions (FlashAttention, custom kernels) needs
+`nvcc`: check `which nvcc`, and prefer prebuilt wheels or a `-devel` image tag.
 
 Note: `libnuma1` is required by `sglang`'s `sgl_kernel` and some `vllm` configs — missing it causes cryptic "kernel not found" errors that actually mean the `.so` failed to load.
 
@@ -539,6 +558,249 @@ For reliable failure diagnosis, poll `lium ps` every ~10-30s for the first few m
 
 If an executor is visible on the lium.io dashboard but `lium up <node-id>` or `lium ls` doesn't show it, the platform's availability filter rejected it. Reasons include: low free disk space, high disk utilization, unresponsive health checks, or missing verification. **`lium ls` is the source of truth for rentable machines** — prefer filtering/selecting from `lium ls` output rather than matching IDs from the website.
 
+## Agent Playbook
+
+The loop that works unattended, from a shell with `LIUM_API_KEY` set. Every pod
+gets a **name** (so it can be found again), a **TTL** (so a crashed agent does
+not bill for days) and a **GPU-count check** (so you do not pay for GPUs that are
+not there). Work runs **detached** and is polled; results are pulled with
+`rsync`; the run ends with `rm` and a `ps` that shows nothing left.
+
+```bash
+export LIUM_API_KEY=sk_...           # non-interactive auth; beats ~/.lium/config.ini
+NAME=job-$(date +%s)
+
+# 1. Pick hardware from JSON, not from the table, and keep the node's id (the UUID) for step 2.
+#    Pick from ls yourself only when you need a filter `up --gpu` lacks (here: tier and a price sort).
+#    Otherwise rent by spec (`lium up --gpu H200 -c 8`, see Non-Interactive Pod Creation): since 0.0.39 the backend
+#    picks the cheapest node; 0.0.37/0.0.38 pick the first Pareto row locally. A node you pick here may be
+#    taken by step 2 — the `||` cleanup there covers that.
+NODE=$(lium ls --gpu H200 --count 8 --format json | jq -c 'map(select(.tier=="secure")) | sort_by(.price_per_gpu_hour) | .[0]')
+[ "$NODE" != null ] || { echo "no secure-tier 8×H200 node is listed"; exit 1; }
+jq -r '"\(.huid) \(.config) $\(.price_per_hour)/h \(.country)"' <<<"$NODE"
+NODE_ID=$(jq -r '.id' <<<"$NODE")
+
+# 2. Rent that node, non-interactively, with a TTL; --no-ssh returns as soon as the pod is RUNNING.
+#    A node id takes no --gpu/-c (a node id and the filters exclude each other); with no --count the
+#    rent takes the node's free GPUs — the 8 that step 1 filtered on — and --verify-gpus --strict-gpus
+#    removes the pod when the GPU count it sees is not that.
+#    The pod bills from the moment the rent is accepted: when up fails later (pod_not_ready
+#    after --timeout, an SSH check that could not run), the pod is still there — remove it.
+lium up "$NODE_ID" --name "$NAME" --ttl 6h -y --no-ssh --verify-gpus --strict-gpus \
+  || { lium ps "$NAME" --format json >/dev/null 2>&1 && lium rm "$NAME" -y; exit 1; }
+
+# 3. Read the pod record (up prints no JSON) and keep the evidence of what you pay for.
+#    ps's gpu_count is the node's GPU count (= the billed count for a whole-node rent like this one;
+#    `lium up --verify-gpus` above already compared the pod row's own billed count)
+lium ps "$NAME" --format json > pod.json
+BILLED=$(jq -r '.[0].gpu_count' pod.json)
+SEEN=$(lium exec "$NAME" --json "nvidia-smi -L" | jq -r '.results[0].stdout' | grep -c '^GPU ' || true)
+[ "$SEEN" = "8" ] && [ "$BILLED" = "8" ] || { echo "GPU count mismatch: asked 8, billed $BILLED, visible $SEEN"; lium rm "$NAME" -y; exit 1; }
+
+# 4. Prepare the pod (fast path, tools, venv) — one --script exec; stdin is NOT forwarded
+cat > setup.sh <<'EOF'
+set -e
+mkdir -p /workspace/{logs,out,hf}
+apt-get update -qq && apt-get install -y -qq rsync ffmpeg jq >/dev/null
+python3 -m venv --system-site-packages /workspace/venv
+. /workspace/venv/bin/activate && pip install -q "huggingface_hub[hf_transfer]"
+EOF
+lium exec "$NAME" --script setup.sh
+
+# 5. Start the job detached (capture the PID from --json), then poll. The wrapper writes train.py's exit
+#    code to /workspace/logs/exit_code when it ends, so step 6 can tell a finished job from a crashed one.
+lium scp "$NAME" ./train.py /workspace/train.py
+#    `cd …;` not `cd … &&`: `&` after an and-list backgrounds the whole list in a subshell that keeps the
+#    SSH session's stdout, and `lium exec` would then wait for the job instead of returning the PID.
+PID=$(lium exec "$NAME" --json "cd /workspace; HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1 nohup setsid bash -c '/workspace/venv/bin/python train.py > /workspace/logs/train.log 2>&1; echo \$? > /workspace/logs/exit_code' > /dev/null 2>&1 < /dev/null & echo \$!" | jq -r '.results[0].stdout' | tr -d '[:space:]')
+# The remote always exits 0 here, so a failed `lium exec` is lium's own error: exit 5 = the pod is gone
+# (TTL fired, removed elsewhere), anything else an API/SSH hiccup to retry — never "job finished". An empty
+# PID does not mean the job did not start: the command may have reached the pod before the hiccup, so look
+# before you remove anything.
+[ -n "$PID" ] || { echo "no PID came back; check the pod before retrying:"; lium exec "$NAME" "pgrep -af '[p]ython train.py'; tail -n 20 /workspace/logs/train.log"; exit 1; }
+while :; do
+  OUT=$(lium exec "$NAME" --json "kill -0 $PID 2>/dev/null && echo running || echo finished"); rc=$?   # lium's own exit, before any pipe
+  [ "$rc" -eq 5 ] && { echo "pod gone (TTL or removal)"; exit 1; }
+  if [ "$rc" -eq 0 ]; then
+    STATE=$(jq -r '.results[0].stdout' <<<"$OUT" | tr -d '[:space:]')
+    [ "$STATE" = finished ] && break
+    lium exec "$NAME" "tail -n 2 /workspace/logs/train.log"
+  fi
+  sleep 60
+done
+
+# 6. Pull results and logs (no -z for binary output; resumable); tear down only when both the pull and the
+#    job succeeded. A failed rsync or a non-zero exit code keeps the pod, and the pod keeps billing until
+#    you `lium rm` it yourself, so look at logs/train.log and decide.
+EXIT_CODE=$(lium exec "$NAME" --json "cat /workspace/logs/exit_code" | jq -r '.results[0].stdout' | tr -d '[:space:]')
+SSH_COMMAND=$(lium ps "$NAME" --format json | jq -r '.[0].ssh_command')   # read it again: a restart can move host or port; ssh -p <port> <pinned host-key options> root@<host>
+rsync -a --partial --inplace --progress -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+  "${SSH_COMMAND##* }:/workspace/out/" ./out/ || { echo "rsync failed; pod kept for a retry"; exit 1; }
+rsync -a --partial --inplace --progress -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+  "${SSH_COMMAND##* }:/workspace/logs/" ./logs/ || { echo "rsync of logs failed; pod kept for a retry"; exit 1; }
+[ "$EXIT_CODE" = 0 ] || { echo "train.py exited with $EXIT_CODE (see logs/train.log); pod kept, still billing"; exit 1; }
+lium rm "$NAME" -y
+lium ps --format json | jq 'length'   # 0 → nothing left billing
+```
+
+`lium exec <pod> --script setup.sh` is the safe way to run a multi-line setup: no
+quoting games, and the script's exit code comes back. (`lium exec <pod> "bash -s"
+< setup.sh` does **not** work — local stdin is never forwarded.) Capture remote
+output with `--json | jq -r '.results[0].stdout'`; the human format prints an
+`Executing on …` line on stdout first. The `stdout` field keeps its trailing
+newline: strip it (`tr -d '[:space:]'`, or `grep -c` as above) before comparing
+it or feeding it to `jq`'s `tonumber`, which rejects `"8\n"`.
+
+### Verify What You Paid For
+
+Two failure modes were seen repeatedly on 4- and 8-GPU rentals: the platform
+provisions a **1-GPU pod** when the requested count is unavailable (silent
+downgrade), and a pod is **billed for N GPUs but the container exposes fewer**
+(phantom GPUs). Neither shows up as an error. `lium up --verify-gpus` counts the
+GPUs over SSH after the pod is ready and exits 1 on a mismatch; with
+`--strict-gpus` it also removes the pod. Keep the evidence yourself, every time,
+right after `up`:
+
+```bash
+lium ps "$NAME" --format json | jq '.[0] | {gpu_count, price_per_hour, config}'   # the node's GPUs and the pod's $/h — what a whole-node rent is billed for
+lium exec "$NAME" "nvidia-smi -L"                                                # what the container sees
+lium exec "$NAME" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader"
+```
+
+If either number is below what you asked for, `lium rm` the pod immediately and
+rent again (another executor: pass its `id` from `lium ls --format json` as
+`NODE_ID`; `lium up` accepts the HUID since 0.3.0 (lium#153) and rejects it in every
+release before that). Keep the `nvidia-smi -L` output; it is the evidence for
+a refund.
+
+### Pod Gotchas — The First Hour
+
+Observed on the default `daturaai/pytorch` templates (Ubuntu 24.04). Check with
+`mount | grep -E ' /root | /workspace '`, `nvidia-smi`, `python -c "import torch; print(torch.__version__, torch.cuda.get_arch_list())"`.
+
+- **Use `/workspace`, not `/root`.** The home directory is an encrypted FUSE mount
+  (`gocryptfs`): model loads from it are several times slower, it pegs a CPU core
+  during heavy I/O, and multi-process caches (Triton, torch.compile) misbehave on
+  it. Put venvs, `HF_HOME`, datasets, checkpoints and outputs under `/workspace`.
+  In the container restarts we saw, `/workspace` survived and everything else
+  (running processes, `/root`, `/tmp`) did not — treat the rest as disposable.
+- **Weights: `HF_HOME=/workspace/hf` + `hf_transfer`.**
+  `pip install "huggingface_hub[hf_transfer]"`, then
+  `export HF_HOME=/workspace/hf HF_HUB_ENABLE_HF_TRANSFER=1` before any download
+  — multi-GB/s on most nodes instead of a few hundred MB/s. Gated models need
+  `HF_TOKEN`. Download once, detached, before starting the GPU job.
+- **PEP 668**: system `pip` refuses to install. Use a venv under `/workspace`
+  (`--system-site-packages` keeps the image's torch) or `uv`; see the pitfall
+  above.
+- **Blackwell needs a matching torch.** B200 / B300 / RTX PRO 6000 / RTX 5090 are
+  `sm_100` / `sm_103` / `sm_120`. A torch built for CUDA 12.6 has no kernels for
+  them and fails on the first CUDA call (`no kernel image is available`). Pick a
+  `cuda12.8` or `cuda13.0` template tag (`-t <id>`), or reinstall:
+  `pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu130`
+  (`cu128` also works). Verify with `torch.cuda.get_arch_list()`.
+- **FlashAttention-3 is Hopper-only** (H100/H200). On Blackwell use
+  FlashAttention-4 (beta) or PyTorch SDPA's cuDNN/flash backends; building FA3
+  there wastes 20+ minutes and then fails at runtime. Most serving stacks
+  (vLLM, SGLang) pick a working backend on their own — prefer their wheels over
+  building kernels. Building anything CUDA needs `nvcc`, which the base image
+  does not ship (`-devel` tags do).
+- **Missing tools**: `ffmpeg`, `rsync`, `nvcc`, `tesseract`, `jq`, `tmux` are not
+  installed. `apt-get update && apt-get install -y ...` first — as root, no sudo.
+- **`exec` blocks on background children**: start long jobs with
+  `nohup setsid ... > log 2>&1 < /dev/null &` (pitfall above) and poll the log.
+- **Container restarts happen.** A pod can restart without any action from you;
+  GPU jobs die, `/workspace` stays. Write checkpoints to `/workspace`, make jobs
+  resumable, and note `uptime` / `ps -p 1 -o etimes=` when a job vanished.
+- **Ports**: only the ports in `lium ps --format json | jq '.[0].ports'` are
+  reachable from outside (internal → external map). Bind servers to `0.0.0.0`
+  on an internal port from that map, or use `lium port-forward`.
+
+### Moving Data
+
+```bash
+# Upload: lium handles it (single file, or a directory with lium rsync)
+lium scp "$NAME" ./config.yaml /workspace/config.yaml
+lium rsync "$NAME" ./src /workspace/src
+
+# Download a directory: plain rsync over the pod's ready ssh command (lium ps --format json
+# `ssh_command`: -p, the pinned host key, root@host; add -i, drop the trailing root@host for -e)
+SSH_COMMAND=$(lium ps "$NAME" --format json | jq -r '.[0].ssh_command')
+rsync -a --partial --inplace --progress --bwlimit=20000 \
+  -e "${SSH_COMMAND% root@*} -i $HOME/.ssh/id_ed25519" \
+  "${SSH_COMMAND##* }:/workspace/out/" ./out/
+```
+
+- `--partial --inplace` makes a dropped transfer resumable; `--bwlimit` (KB/s)
+  keeps one pull from starving the rest of the job.
+- No `-z` for media, checkpoints, parquet or anything already compressed.
+- Throughput out of a pod varies a lot (from ~100 KB/s to multi-MB/s); when a
+  big pull is slow, sync **pod to pod** to a cheap 1-GPU pod and tear the
+  expensive one down, then pull from the cheap pod at leisure.
+
+Pod-to-pod copy (source pod pushes to destination pod over SSH; both need
+`rsync` installed):
+
+```bash
+SRC=render-pod; DST=edit-pod
+read -r DHOST DPORT < <(lium ps "$DST" --format json | jq -r '.[0].ssh_cmd | capture("@(?<h>\\S+).*-p (?<p>\\d+)") | "\(.h) \(.p)"')
+# one-time trust: a key on SRC, authorised on DST
+PUB=$(lium exec "$SRC" --json "test -f ~/.ssh/id_p2p || ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_p2p; cat ~/.ssh/id_p2p.pub" | jq -r '.results[0].stdout' | tr -d '\n')
+lium exec "$DST" "mkdir -p ~/.ssh && grep -qxF '$PUB' ~/.ssh/authorized_keys 2>/dev/null || echo '$PUB' >> ~/.ssh/authorized_keys"
+# the copy itself (detach it like any long job when it is large)
+lium exec "$SRC" "rsync -a --partial --inplace -e 'ssh -p $DPORT -i ~/.ssh/id_p2p -o StrictHostKeyChecking=accept-new' /workspace/out/ root@$DHOST:/workspace/in/"
+```
+
+### Watch the GPUs
+
+A pod that is quietly idle costs the same as one that is busy. Sample utilisation
+into a CSV on the pod as soon as the job starts; it is also your evidence when a
+job stalls or a GPU is missing.
+
+```bash
+lium exec "$NAME" "mkdir -p /workspace/logs; nohup setsid nvidia-smi --query-gpu=timestamp,index,utilization.gpu,memory.used,memory.total,power.draw --format=csv -l 60 > /workspace/logs/gpu.csv 2>&1 < /dev/null & echo \$!"
+lium exec "$NAME" "tail -n 8 /workspace/logs/gpu.csv"      # one line per GPU per minute
+lium exec "$NAME" "nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv,noheader"   # one-shot
+```
+
+Zero utilisation across all GPUs for more than a few minutes means the job is
+stuck on CPU work, on I/O from `/root`, or has crashed — check the log before the
+bill grows.
+
+### Cost Hygiene
+
+- **Always `--ttl`** (or `--until`). It is scheduled once the pod is RUNNING; a
+  pod that never got there has no TTL — `lium ps` and `lium rm` it yourself.
+  Extend a TTL with `lium rm <pod> --in 4h` (schedules a new removal) and see
+  what is scheduled with `lium schedules list`.
+- **Check the meter**: `lium ps --format json | jq '.[] | {name, price_per_hour, spent_usd, uptime}'`
+  — `spent_usd` is uptime × price, computed client-side. Multi-GPU nodes are
+  billed for the whole node from the moment the rent is accepted — before `up`
+  returns — including the image pull, the readiness wait and your setup time.
+- **Never keep an 8-GPU node for CPU work.** Downloads, preprocessing, video
+  encoding, editing and uploads belong on the cheapest node in `lium ls`
+  (`--sort price_per_hour --limit 5`) or on your own machine. Copy pod-to-pod,
+  `rm` the big node, continue on the cheap one.
+- **One `up` per pod name.** If `up` times out or errors after "Renting
+  machine", run `lium ps` before retrying — the pod may exist (and bill) already.
+  Retrying blindly has produced two pods for one request.
+- **Tear down and prove it**: `lium rm "$NAME" -y && lium ps --format json | jq length`
+  — expect `0` (or the count you intend to keep). `lium rm -a -y` ends everything.
+- Keep the `nvidia-smi -L` and `lium ps --format json` snapshots from step 3 of
+  the playbook; billing disputes need them.
+
+### Only What the Released CLI Has
+
+This skill describes the released CLI, 0.0.37 as the baseline, with later releases marked where they differ, and nothing that is not released;
+probe with `lium <cmd> --help` before relying on a flag you do not see here.
+
+- GPU count: `lium up --verify-gpus --strict-gpus` is the built-in check; `nvidia-smi -L` inside the pod against `gpu_count` from `lium ps --format json` is the evidence you keep.
+- Detach long jobs by hand: `nohup setsid ... > log 2>&1 < /dev/null &` through `lium exec`.
+- Template ids: `curl .../api/templates` or `Lium().templates()`.
+- Machine-readable output: `--format json` on `ps`/`ls`, `--json` on `balance`/`exec`/`describe`/`audit`. `lium ps --format json` carries `ssh_command` ready to run, next to the `ssh_cmd` the one-liners above parse.
+- A bad or revoked key exits `3` — prove the key with `lium balance` (see No User Identity Command). A 403 on rent exits `6` and means Insufficient balance, not a bad key (see Before the First Rental — Balance).
+- Never wait for a prompt: pass `-y`, `--no-ssh` and every argument up front.
+- SDK: see the SDK reference's agent recipe for `up` → `wait_ready` → `exec` → `down`.
+
 ## CLI Quick Reference
 
 ### Discovery
@@ -568,10 +830,13 @@ The same numbers are on https://lium.io/pricing and https://lium.io/gpu/<model-s
 ### Pod Lifecycle
 
 ```bash
-lium up --gpu H100 -y          # create pod
+lium up --gpu H100 --name my-pod --ttl 4h -y --no-ssh   # create pod, return when ready
 lium ps                        # list active pods
-lium ps --format json          # machine-readable pod list
-lium ssh my-pod                # SSH into pod
+lium ps --format json          # machine-readable pod list (ssh_cmd, ports, price, spent)
+lium ps my-pod --format json   # one pod
+lium describe my-pod --json    # full manifest of one pod
+lium audit --since 24h --json  # who did what to your pods; an API key needs the read scope
+lium ssh my-pod                # SSH into pod (interactive — not for agents)
 lium exec my-pod "nvidia-smi"  # run command
 lium exec all "pip install torch"  # batch exec on all pods
 lium rm my-pod -y              # stop pod
@@ -593,11 +858,16 @@ Streams the **Docker container's PID 1 stdout/stderr** from the executor. Works 
 ### File Transfer
 
 ```bash
-lium scp my-pod ./train.py              # upload to /root/
-lium scp my-pod ./data.csv /root/data/  # specific path
-lium scp all ./config.json              # upload to all pods
-lium rsync my-pod ./project             # sync directory
+lium scp my-pod ./train.py                    # upload to ~ (/root) on the pod
+lium scp my-pod ./data.csv /workspace/data/   # upload to a specific path
+lium scp my-pod /workspace/out/final.mp4 ./ -d  # download one file
+lium scp all ./config.json                    # upload to all pods
+lium rsync my-pod ./project /workspace/project  # sync a local directory TO the pod (upload only)
 ```
+
+`lium rsync` is upload-only and takes no flags. Pull directories back with plain
+`rsync` over the pod's SSH endpoint (`ssh_cmd` from `lium ps --format json` gives
+host and port; see `lium rsync` in the CLI reference).
 
 ### Pod Targeting
 
@@ -619,11 +889,16 @@ name the table shows; accepted by `lium up` since 0.3.0 (lium#153), refused by e
 release before it, 0.2.0 included), `price_per_hour`,
 `price_per_gpu_hour`, `gpu_count`, `download_mbps`, `upload_mbps`, `country`.
 
-`--format [table|json]` exists on `lium ls` and `lium ps`. `--json` — a plain flag,
-not a format choice — is taken by `lium exec`, `lium fund`, `lium balance`,
+`--format [table|json]` exists on `lium ls` and `lium ps` (on 0.0.37/0.0.38
+`lium ps --json` is rejected). `--json` — a plain flag, not a format choice — is taken by
+`lium describe`, `lium exec`, `lium audit`, `lium fund`, `lium balance`,
 `lium signup`, `lium topup create`, `lium topup currencies`, and by the whole
 `lium provider` group (set it on the group: `lium provider --json node list`).
-`lium templates` has neither, and neither does anything else.
+On 0.0.37/0.0.38 `lium templates` and `lium up` have neither, and neither does
+anything else. Since 0.0.39 (lium#217) `--json` is an alias of `--format json` on
+`ls`, `ps` and `templates` (so `lium ps --json` works), `templates --format json`
+prints the ids, and `LIUM_OUTPUT=json` makes every failure a JSON envelope on
+stderr; `lium up` still has no JSON output.
 
 ## End-to-End Agent Workflow
 
@@ -657,23 +932,26 @@ lium balance --json
 # 4. Find suitable GPU (sort by speed by default)
 lium ls --gpu H100 --sort download
 
-# 5. Create pod (non-interactive! --no-ssh returns instead of opening a session)
-lium up --gpu H100 --name work-pod --ttl 6h -y --no-ssh
+# 5. Create pod (non-interactive! --no-ssh returns instead of opening a session).
+#    --verify-gpus compares the billed count with nvidia-smi over SSH; --strict-gpus removes a wrong pod.
+lium up --gpu H100 --name work-pod --ttl 6h --verify-gpus --strict-gpus -y --no-ssh \
+  || { lium ps work-pod --format json | grep -q '"id"' && lium rm work-pod -y; exit 1; }   # exit 1 can leave a billing pod (pod_not_ready)
 
-# 6. Wait and verify (read the output, not just the exit code)
-lium ps --format json
+# 6. Read the pod record (up has no JSON output)
+lium ps work-pod --format json
 
 # 7. Use the pod
-lium scp work-pod ./code.py
-lium exec work-pod "python /root/code.py"
+lium scp work-pod ./code.py /workspace/code.py
+lium exec work-pod "cd /workspace && python code.py"
 
 # 8. Cleanup
 lium rm work-pod -y
+lium ps                                        # confirm nothing is left billing
 ```
 
 ## Run One Python Function on a GPU (no pod scripting)
 
-When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section is since 0.0.40 (lium#208); on 0.0.39 and earlier the decorator takes only `machine`, `template_id`, `cleanup`, `requirements`, picks the first node whose name contains the string, and results must be JSON-serialisable.
+When the task is "run this function on a GPU and give me the result" — a benchmark, an inference, an embedding batch — use `@lium.machine` from the SDK instead of `up` / `scp` / `exec` / `rm` by hand. It rents the cheapest matching node, ships the function, installs the requirements once, streams the function's output, returns the result (or re-raises its exception) and removes the pod. Cost is bounded: the pod is scheduled for removal at `timeout + 15 min` (plus `keep_warm`) from the moment it is rented. Everything in this section beyond `machine`, `template_id`, `cleanup` and `requirements` **needs 0.0.40 (lium#208)**: on 0.0.37–0.0.39 the decorator takes only those four, picks the first node whose name contains the string, installs `requirements` into an isolated venv (so torch must be listed there too), matches `machine` as a substring of the node's name (`"H200"`; the `"1xH200"` form is 0.0.40 too), and results must be JSON-serialisable.
 
 ```python
 import lium
@@ -698,9 +976,9 @@ finally:
     generate.close()                                  # remove the warm pod now (else: keep_warm + 2 min later)
 ```
 
-Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH200"`, `"RTX4090"`; count defaults to 1 — `"A100"` is one A100, not eight). Import inside the function; a module-level import/constant/helper used inside is refused at definition time (it would be a `NameError` on the pod). Return plain Python types (`str()`, `.tolist()`, `.cpu().numpy()`), not tensors or `torch.__version__`. Torch is already on the default template — do not put it in `requirements`. `f.map(items)` runs a batch on one pod; `f.local(x)` or `LIUM_MACHINE_LOCAL=1` runs the function locally for tests; `quiet=True` drops the `[lium]` progress lines (the function's own prints still stream). Like the rest of this section (`timeout`, `keep_warm`, `close()`, `RemoteExecutionError`, the node pick), every one of these (map, local, LIUM_MACHINE_LOCAL, quiet) is since 0.0.40 (lium#208) — not one of them exists on 0.0.39 or earlier.
+Rules that save a failed call: `machine` is `"<count>x<gpu>"` / `"<gpu>"` (`"1xH200"`, `"RTX4090"`; count defaults to 1 — `"A100"` is one A100, not eight). Import inside the function; a module-level import/constant/helper used inside is refused at definition time (it would be a `NameError` on the pod). Return plain Python types (`str()`, `.tolist()`, `.cpu().numpy()`), not tensors or `torch.__version__`. Torch is already on the default template — do not put it in `requirements` (since 0.0.40 the venv sees the image's packages; before that it does not — list it there). `f.map(items)` runs a batch on one pod; `f.local(x)` or `LIUM_MACHINE_LOCAL=1` runs the function locally for tests; `quiet=True` drops the `[lium]` progress lines (the function's own prints still stream). Like the rest of this section (`timeout`, `keep_warm`, `close()`, `RemoteExecutionError`, the node pick), every one of these (map, local, LIUM_MACHINE_LOCAL, quiet) is 0.0.40 (lium#208) — not one of them exists on 0.0.37–0.0.39.
 
 ## Detailed References
 
 - **Full CLI command reference**: [references/cli-commands.md](references/cli-commands.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md) — all commands, flags, volumes, backups, scheduling, port-forward, etc.
-- **Python SDK reference**: [references/sdk-reference.md](references/sdk-reference.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md) — programmatic access via `lium.sdk.Lium`, `lium.Client`, `@machine` decorator, async patterns.
+- **Python SDK reference**: [references/sdk-reference.md](references/sdk-reference.md) (also at https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md) — programmatic access via `lium.sdk.Lium` (real signatures, models, exceptions), an end-to-end agent recipe, and the `@machine` decorator.

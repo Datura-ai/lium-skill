@@ -6,7 +6,7 @@
 [![CLI on PyPI](https://img.shields.io/pypi/v/lium.io?label=lium%20CLI%20on%20PyPI)](https://pypi.org/project/lium.io/)
 
 The `lium` agent skill — teaches an AI coding agent to rent GPUs and manage pods
-on [Lium (lium.io)](https://lium.io), agent-first compute: a decentralized GPU rental marketplace on Bittensor Subnet 51.
+on [Lium (lium.io)](https://lium.io), agent-first compute: a GPU rental platform.
 
 ## Install
 
