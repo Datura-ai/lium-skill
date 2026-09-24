@@ -49,7 +49,7 @@ lium init
 
 `llms-full.txt` is generated. After changing `lium/SKILL.md` or anything under
 `lium/references/`, regenerate and commit it in the same change — the
-`check-drift` job (`.github/workflows/check-llms-full.yml`, the only CI here)
+`check-drift` job (`.github/workflows/check-llms-full.yml`)
 regenerates the file on every PR, push to `main` and merge-queue run and fails
 on any difference:
 
