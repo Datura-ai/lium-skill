@@ -43,8 +43,8 @@ lium --version
 
 | Variable | What it does |
 |---|---|
-| `LIUM_OUTPUT=json` | Same as `--json` on every `lium provider` command and on `lium mine` *(coming with the next CLI release)*. lium 0.9.1 ignores it for provider commands: pass `--json`. |
-| `LIUM_NONINTERACTIVE=1` | Agent mode without JSON output: no provider prompt reads stdin *(coming with the next CLI release; see [Agent mode](#agent-mode))*. |
+| `LIUM_OUTPUT=json` | Same as `--json` on every `lium provider` command and on `lium mine`: [agent mode](#agent-mode) with JSON output *(coming with the next CLI release)*. lium 0.9.1 ignores it for provider commands: pass `--json`. |
+| `LIUM_NONINTERACTIVE=1` | [Agent mode](#agent-mode) with text output: no provider prompt reads stdin, errors exit by the same [exit map](#exit-codes-and-error-codes) as `--json`, and stderr starts with `[<namespaced code>] <message>` *(coming with the next CLI release)*. |
 | `LIUM_PROVIDER_ACK=1` | Answers the provider persona gate (the one-time "this changes your provider account" confirmation), like `--yes`. |
 | `LIUM_PROVIDER_HOTKEY` | Hotkey **name** on the coldkey (with `LIUM_PROVIDER_COLDKEY`, the wallet name): sign in with the wallet on this machine. |
 | `LIUM_PROVIDER_TOKEN` | A provider API token (`lpk_…`), sent as `Authorization: Bearer`; no wallet and no password needed *(coming with the next CLI release)*. |
@@ -60,6 +60,8 @@ Keep secrets in the environment, not on argv. `lium mine -k` takes the hotkey's 
 - *(coming with the next CLI release)* A failure is one envelope on **stdout** too:
   `{"ok": false, "error": {"code", "legacy_code"?, "message", "hint", "exit_code", "data"?, "request_id"?}}`, and the
   process exits with `exit_code`. Progress, when a command has any, goes to stderr as one JSON object per line.
+- *(coming with the next CLI release)* Under `LIUM_NONINTERACTIVE=1` without `--json` the output is text; a failure
+  is `[<namespaced code>] <message>` on stderr, then a `hint:` line, and the process exits by the same map.
 - lium 0.9.1: a `--json` failure is `{"ok": false, "error": {"code", "message", "hint", "context"}}` on **stderr**,
   with an UPPER_CASE `code` and no `exit_code`; without `--json` it is text on stderr. Read stderr and the process
   exit status. `LIUM_OUTPUT=json` changes nothing there.
@@ -72,11 +74,15 @@ Keep secrets in the environment, not on argv. `lium mine -k` takes the hotkey's 
 ### Agent mode
 
 *(coming with the next CLI release)* `--json`, `LIUM_OUTPUT=json` or `LIUM_NONINTERACTIVE=1` puts the provider
-commands in agent mode. There a confirmation (the persona gate, or any command that changes something) never reads
-stdin: it fails with `input.confirmation_required` (exit 2), and `--yes` or `LIUM_PROVIDER_ACK=1` is the way through.
-Text mode (none of the three) behaves exactly as the released CLI: the prompt reads stdin, a piped `y` confirms and
-a decline exits 1. Always run in agent mode and pass `--yes` (or set `LIUM_PROVIDER_ACK=1`) on commands that change
-something; on lium 0.9.1 `--yes` and `LIUM_PROVIDER_ACK=1` answer the gate too.
+commands in agent mode, and whichever is set, one [exit map](#exit-codes-and-error-codes) applies. `--json` and
+`LIUM_OUTPUT=json` print the JSON envelope; `LIUM_NONINTERACTIVE=1` alone keeps text output, with the namespaced code
+at the start of stderr (`[auth.not_signed_in] not signed in to the provider portal`). In agent mode a confirmation
+(the persona gate, or any command that changes something) never reads stdin: it fails with
+`input.confirmation_required` (exit 2), and `--yes` or `LIUM_PROVIDER_ACK=1` is the way through. Ctrl-C is
+`input.interrupted` (exit 130). Plain text mode (none of the three) behaves exactly as the released CLI: the prompt
+reads stdin, a piped `y` confirms, a decline or Ctrl-C exits 1, and errors keep the old exit numbers. Always run
+in agent mode and pass `--yes` (or set `LIUM_PROVIDER_ACK=1`) on commands that change something; on lium 0.9.1
+`--yes` and `LIUM_PROVIDER_ACK=1` answer the gate too.
 
 ## The journey
 
@@ -102,6 +108,16 @@ command signs in with the first of: `LIUM_PROVIDER_TOKEN`, the hotkey, the `port
 `LIUM_PROVIDER_TOKEN` when you mean to use another. With none, `whoami` answers `auth.not_signed_in` (exit 6): see
 the [exit table](#exit-codes-and-error-codes). lium 0.9.1 has only a): there `whoami` needs the hotkey and answers no
 `auth_method`. An unconfirmed e-mail account fails at `portal login`: see [E-mail confirmation](#e-mail-confirmation).
+
+Commands work with any of the three, `node list` and `billing list` included (scoped to the account's hotkey), with
+these exceptions *(coming with the next CLI release)*:
+
+- `token create|list|revoke` need a session (hotkey or e-mail), not a token (`portal.api_token_needs_session`, exit 6).
+- `lium provider status`, `portal login` without `--email`, `portal logout`, `config set-email` and
+  `config set-password` need the hotkey itself. With a token or an e-mail session they answer `input.arg_invalid`
+  (exit 2). `set-email` and `set-password` sign with the hotkey's wallet (`error.data.requires: "hotkey"`): pass
+  `--hotkey` (or set `LIUM_PROVIDER_HOTKEY`) for a wallet on this machine, or ask the person to change the e-mail
+  or password in the provider portal.
 
 Once signed in with a) or b), mint a token so later runs need neither the wallet nor the password *(coming with the
 next CLI release; until the portal serves API tokens it answers `portal.not_supported`, exit 3)*:
@@ -140,8 +156,8 @@ carries one result.
 
 Success (exit 0): `data.node_id`, `data.node_url`, `data.status`, `data.listed: true`. Otherwise:
 
-- **exit 11, `node.not_listed_yet`**: the node is registered but not listed yet. Go to step 4. In text mode (and on
-  0.9.1) this case is exit 2.
+- **exit 11, `node.not_listed_yet`**: the node is registered but not listed yet. Go to step 4. In plain text mode
+  (and on 0.9.1) this case is exit 2.
 - **exit 1, `node.offline` / `node.validation_failed`**: the portal names a fix in `data.fix`. Go to step 4.
 - **exit 1, `host.*`**: a setup step failed on the host (`host.docker_missing`, `host.nvidia_driver_missing`,
   `host.port_in_use` with `data.port` and `data.owner`, `host.preflight_failed` with `data.verdict`, …). Fix the host
@@ -212,7 +228,8 @@ Read two things from that row:
   rented node whose free GPUs are still offered reads `listing_state: "listed"` with `rented_gpu_count` above 0. The
   row always has the key; when it is `null` (an older portal), go by `listing_state` alone.
 - **Already paused**: `data.hidden_reasons` has an entry with `code` `NEW_RENTALS_PAUSED`. The portal lists it
-  whenever new rentals are paused on the node, rented or not.
+  whenever new rentals are paused on the node, rented or not. `lium provider node get "$NODE" --json` shows the
+  same fact as `data.new_rentals_pause_requested_at` (`null` while new rentals are taken).
 
 Then:
 
@@ -292,27 +309,31 @@ needs a linked Discord account: see [Discord linking](#discord-linking).
 
 ## Exit codes and error codes
 
-Branch on `error.code`; the exit code is the coarse class. Under `--json` or `LIUM_OUTPUT=json` every provider
-error exits by this one map, whatever its origin, and an old UPPER_CASE code is kept only in `error.legacy_code`
-*(coming with the next CLI release)*.
+Branch on the code; the exit code is the coarse class. In agent mode (`--json`, `LIUM_OUTPUT=json` or
+`LIUM_NONINTERACTIVE=1`, whichever is set) every provider error exits by this one map, whatever its origin
+*(coming with the next CLI release)*. With `--json` or `LIUM_OUTPUT=json` the code is `error.code`, and an old
+UPPER_CASE code is kept only in `error.legacy_code`. With `LIUM_NONINTERACTIVE=1` alone, read it from the start of
+stderr: `[<namespaced code>] <message>`.
 
 | Exit | Codes | Meaning | What the agent does |
 |---|---|---|---|
 | 0 | | ok | Continue. |
 | 1 | `host.*`, `node.offline`, `node.validation_failed` | A step failed, or the portal names a fix | Read `error.message` and `error.data`; fix the host or the node, then re-run the same command. |
-| 2 | `input.confirmation_required`, `input.input_required`, `input.arg_invalid`, `input.register_token_invalid`, `input.hotkey_conflicts_with_token` | A value or a confirmation nobody could give | Add what `error.hint` names (`--yes` or `LIUM_PROVIDER_ACK=1`, `-k`, `LIUM_PROVIDER_PASSWORD`, a new register token) and re-run once. Never retry unchanged. `input.arg_invalid` is a bad argument value, or a command that needs the hotkey itself (`lium provider status`, `portal login` without `--email`, `portal logout`) run without one; it does not mean "not signed in" (that is `auth.not_signed_in`, exit 6). |
+| 2 | `input.confirmation_required`, `input.input_required`, `input.arg_invalid`, `input.config_missing`, `input.register_token_invalid`, `input.hotkey_conflicts_with_token`, any other `input.*` | A value or a confirmation nobody could give | Add what `error.hint` names (`--yes` or `LIUM_PROVIDER_ACK=1`, `-k`, `LIUM_PROVIDER_PASSWORD`, a new register token) and re-run once. Never retry unchanged. `input.arg_invalid` is a bad argument value, or a command that needs the hotkey itself run with a token, an e-mail session or nothing: `lium provider status`, `portal login` without `--email`, `portal logout`, `config set-email`, `config set-password` (the last two with `error.data.requires: "hotkey"`). Pass `--hotkey` for a wallet on this machine, or ask the person to make the change in the provider portal. It does not mean "not signed in" (that is `auth.not_signed_in`, exit 6). |
 | 3 | `portal.<detail.code>`, `portal.not_supported` | The portal refused or failed the call | `portal.not_supported` on `config connect-discord` or `portal confirm-email` (with `data.legacy_flow: true`): follow the old flow in [One-time human steps](#one-time-human-steps); do not stop there. On any other command the portal does not serve this route yet: stop using that command. Other codes: act on `error.message`/`error.data`; a 5xx may be retried up to 3 times with backoff. |
 | 4 | `net.unreachable`, `ssh.*` | Nothing answered | Check the network and `--portal-url`; retry with backoff (30 s, 60 s, 120 s). |
 | 5 | `node.not_found`, `portal.executor_not_found`, `auth.wallet_not_found`, `host.uuid_not_found`, any other `*_not_found` code or portal 404 | Something the command names does not exist | By code. `auth.wallet_not_found`: this machine has no wallet by those names; fix `LIUM_PROVIDER_COLDKEY` / `LIUM_PROVIDER_HOTKEY` (the wallet and hotkey **names**) or use another sign-in, then re-run once. `host.uuid_not_found`: the executor installer on the host did not report an executor id, so the host setup did not finish; read `error.message`, fix the host and re-run step 3. Any other: the node is not on this account; re-read the ids with `lium provider node listing --json`. |
-| 6 | `auth.not_signed_in`, `auth.*` (not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, a portal 401/403 | Not signed in, signed out, expired or not allowed | `auth.not_signed_in`: nothing is signed in, and every provider command that needs a sign-in answers it under `--json`. Follow `error.hint`: set `LIUM_PROVIDER_TOKEN`, run `portal login --email`, or set a hotkey ([step 1](#1-sign-in-pick-one)). If `error.data.session_email` is present, that e-mail session has ended: re-run `lium provider portal login --email <that address> --json`. Other codes: sign in again the same way (`lium provider portal login --force --json` for a hotkey) or use a token with the right scope. Do not loop. |
+| 6 | `auth.not_signed_in`, `auth.*` (`auth.invalid`, `auth.expired`, `auth.forbidden`, `auth.hotkey_not_registered`; not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, `portal.overview_not_for_custodied_account`, a portal 401/403/419/440 | Not signed in, signed out, expired or not allowed | `auth.not_signed_in`: nothing is signed in, and every provider command that needs a sign-in answers it in agent mode. Follow `error.hint`: set `LIUM_PROVIDER_TOKEN`, run `portal login --email`, or set a hotkey ([step 1](#1-sign-in-pick-one)). If `error.data.session_email` is present, that e-mail session has ended: re-run `lium provider portal login --email <that address> --json`. Other codes: sign in again the same way (`lium provider portal login --force --json` for a hotkey) or use a token with the right scope. Do not loop. |
 | 7 | `portal.rate_limited` (a portal 429), `auth.refresh_race` | Rate limit, or another `lium provider` process is refreshing the token | Retry: after 60 s on a rate limit, after a few seconds on `auth.refresh_race`. |
 | 10 | `node.blocked.<code>` | The node has a gating blocking reason | Look up `<code>` in [Blocking reasons](#blocking-reasons), fix it, then `node status --watch --until-clear`. |
 | 11 | `node.not_listed_yet` | Registered and waited for, not listed yet | Diagnose (step 4); nothing is lost, the node stays registered. |
 | 12 | `human.handoff_required`, `human.handoff_expired` | A person has to act | Relay `error.data.message_for_human` ([One-time human steps](#one-time-human-steps)), wait for the person, then re-run. A `--wait` that timed out is `human.handoff_required` with `error.data.waited_s`: the person has not finished; a re-run asks for a new code, so relay the new message. |
+| 130 | `input.interrupted` | Ctrl-C stopped the command | Nothing to fix; re-run it if the stop was not meant. |
 
-Text mode (no `--json`, no `LIUM_OUTPUT=json`) keeps today's provider exit numbers: 1 argument, 2 auth, 3 portal,
-5 SSH, 6 config missing, 7 token-cache race; so does lium 0.9.1 in every mode. The CLI's `docs/exit-codes.md`
-shows both maps.
+Only plain text mode (none of `--json`, `LIUM_OUTPUT=json`, `LIUM_NONINTERACTIVE=1`) keeps today's provider exit
+numbers: 1 argument (and no sign-in, and Ctrl-C), 2 auth, 3 portal, 5 SSH, 6 config missing, 7 token-cache race,
+with the UPPER_CASE code at the start of stderr. So does lium 0.9.1 in every mode: it has no agent mode. The CLI's
+`docs/exit-codes.md` shows both maps.
 
 ## Blocking reasons
 
@@ -371,7 +392,7 @@ These steps need a person once. Stop, send the message exactly as written (fill 
 answer, then run the command under "After".
 
 *(coming with the next CLI release)* In agent mode, or with `--wait`, the CLI asks the portal for a handoff: one URL
-plus a short code. (Text mode without `--wait` runs `connect-discord`'s browser flow, as the released CLI does;
+plus a short code. (Plain text mode without `--wait` runs `connect-discord`'s browser flow, as the released CLI does;
 `confirm-email` is always a handoff.) Without `--wait` the command exits 12 with `{"ok": false, "error": {"code": "human.handoff_required", "exit_code": 12, "data": {"step",
 "handoff_id", "handoff_url", "code", "expires_at", "message_for_human"}}}`. Relay `data.message_for_human` verbatim.
 With `--wait [--timeout N]` the command first prints the same data as one `{"event": "handoff", …}` line on stderr
