@@ -68,7 +68,7 @@ API=https://lium.io/api
 umask 077                                                       # the files below hold credentials
 mkdir -p -m 700 ~/.ssh && { [ -f ~/.ssh/id_ed25519 ] || ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519; }  # lium up needs an SSH key
 # 1. Account + rent key, no e-mail (0.3 s). The fingerprint is the only login: keep it.
-curl -fsS -X POST $API/auth/signup -H 'Content-Type: application/json' -d '{}' > account.json
+[ -s account.json ] || curl -fsS -X POST $API/auth/signup -H 'Content-Type: application/json' -d '{}' > account.json
 LIUM_API_KEY=$(jq -er .api_key account.json)                    # fails if the key was not minted (it can be null)
 export LIUM_API_KEY
 # 2. A key that can only pay (session login 0.4 s + mint 0.4 s). It reaches no pods.
