@@ -6,7 +6,8 @@ pay. Every step has a copy-paste command, what success looks like in the JSON, a
 few steps only a person can do are listed in [One-time human steps](#one-time-human-steps), each with the exact
 message to relay.
 
-**Release status.** Commands and flags marked *(coming with the next CLI release)* are in the open CLI pull requests
+**Release status.** Commands and flags marked *(coming with the next CLI release)*, or `# lium#29x, not released yet` in
+the code blocks, are in the open CLI pull requests
 [lium#294](https://github.com/Datura-ai/lium/pull/294) (blocking reasons, `--fail-on-blocked`, `--until-clear`) and
 [lium#295](https://github.com/Datura-ai/lium/pull/295) (register token, tier, pause, listing, earnings, idle pay,
 ledger, API tokens, `portal login --email`, `lium mine --json`). lium 0.9.1 and older answer `No such command` or
@@ -73,10 +74,10 @@ The account decides the path. A person who signs in to the portal with Google ha
 ```bash
 # a) hotkey in a wallet on this machine
 LIUM_PROVIDER_COLDKEY=my-wallet LIUM_PROVIDER_HOTKEY=my-hotkey lium provider portal login --json
-# b) e-mail and password (coming with the next CLI release)
-LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email owner@example.com --json
-# c) an API token (coming with the next CLI release): nothing to run, set it once
-export LIUM_PROVIDER_TOKEN=lpk_...
+# b) e-mail and password
+LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email owner@example.com --json  # lium#295, not released yet
+# c) an API token: nothing to run, set it once
+export LIUM_PROVIDER_TOKEN=lpk_...  # lium#295, not released yet
 # check any of them
 lium provider portal whoami --json
 ```
@@ -88,9 +89,9 @@ Once signed in with a) or b), mint a token so later runs need neither the wallet
 next CLI release; until the portal serves API tokens it answers `portal.not_supported`, exit 3)*:
 
 ```bash
-lium provider token create --name my-agent --scope read --scope node --scope tier --scope register --expires-days 30 --json --yes
-lium provider token list --json
-lium provider token revoke <TOKEN_ID> --json --yes
+lium provider token create --name my-agent --scope read --scope node --scope tier --scope register --expires-days 30 --json --yes  # lium#295, not released yet
+lium provider token list --json  # lium#295, not released yet
+lium provider token revoke <TOKEN_ID> --json --yes  # lium#295, not released yet
 ```
 
 `data` of `token create` has the secret **once**. Store it as `LIUM_PROVIDER_TOKEN`; `token list` never shows it.
@@ -98,7 +99,7 @@ lium provider token revoke <TOKEN_ID> --json --yes
 ### 2. Get a register token *(coming with the next CLI release)*
 
 ```bash
-lium provider node register-token --json --yes
+lium provider node register-token --json --yes  # lium#295, not released yet
 ```
 
 Success: `data.token`, `data.expires_at` (one hour) and `data.install_command`, the line to run on the GPU host. The
@@ -109,7 +110,7 @@ token can only add a node to this account and watch its status. The portal's Add
 On the GPU host, with the token from step 2:
 
 ```bash
-lium mine --register "$REGISTER_TOKEN" --wait 45 --json
+lium mine --register "$REGISTER_TOKEN" --wait 45 --json  # --json: lium#295, not released yet
 ```
 
 `--register` implies `--auto` (default ports: service 8080, SSH 2200). The CLI adds the node with the GPU model and
@@ -142,10 +143,10 @@ lium provider node add --gpu-type H100 --gpu-count 8 --ip 203.0.113.7 --port 808
 ### 4. Diagnose
 
 ```bash
-# every own node: listing_state (rented, listed, hidden, offline, validating) and hidden_reasons (coming with the next CLI release)
-lium provider node listing --json
-# one node, with blocking_reasons; exit 10 while anything blocks (--fail-on-blocked: coming with the next CLI release)
-lium provider node get "$NODE" --json --fail-on-blocked
+# every own node: listing_state (rented, listed, hidden, offline, validating) and hidden_reasons
+lium provider node listing --json  # lium#295, not released yet
+# one node, with blocking_reasons; exit 10 while anything blocks
+lium provider node get "$NODE" --json --fail-on-blocked  # lium#294, not released yet
 # which validator step the node is on, and the last run's timeline
 lium provider node status "$NODE" --json
 ```
@@ -160,7 +161,7 @@ Read `gating` from the reason; keep no list of your own. A reason with `kind` `a
 renting whatever its `gating`. An `idle_pay` reason with `gating: false` blocks nothing: the node only earns no idle
 pay, and no action is needed. Until the portal serves the list, the CLI builds it from the validator's last error,
 the listing's hidden reasons and the idle-pay reasons, and marks those nodes `"blocking_reasons_source": "cli_fallback"`
-(the entries then carry `source` instead of `kind`).
+(each of those entries names its origin in `source`).
 
 ### 5. Fix, then verify
 
@@ -174,8 +175,8 @@ For each gating reason:
 4. Watch until the node is clear:
 
 ```bash
-# one JSON object per refresh; exit 0 once no gating reason is left, 10 at the timeout (--until-clear, --timeout: coming with the next CLI release)
-lium provider node status "$NODE" --json --watch --until-clear --timeout 1800
+# one JSON object per refresh; exit 0 once no gating reason is left, 10 at the timeout
+lium provider node status "$NODE" --json --watch --until-clear --timeout 1800  # lium#294, not released yet
 ```
 
 The verdict lands when the validator publishes its next cycle, so a clear node can take several minutes to show as
@@ -184,9 +185,9 @@ clear. On exit 10, read `error.data` again: the reason is still there, or a new 
 ### 6. List on Secure *(coming with the next CLI release)*
 
 ```bash
-lium provider node tier eligibility "$NODE" --json
-lium provider node tier set "$NODE" secure --json --yes
-lium provider node listing "$NODE" --json
+lium provider node tier eligibility "$NODE" --json  # lium#295, not released yet
+lium provider node tier set "$NODE" secure --json --yes  # lium#295, not released yet
+lium provider node listing "$NODE" --json  # lium#295, not released yet
 ```
 
 `eligibility` answers `data.allowed` and `data.blockers` (`{code, message}`: `rented`, `cluster_member`). A refused
@@ -200,11 +201,11 @@ Other node changes: `lium provider node update-price "$NODE" --price 1.85 --json
 ### 7. Earnings and idle pay *(coming with the next CLI release)*
 
 ```bash
-lium provider earnings --from 2026-09-01 --json
-lium provider earnings --emissions --json
-lium provider idle-pay --json
-lium provider idle-pay "$NODE" --json
-lium provider ledger --from 2026-09-01 --json
+lium provider earnings --from 2026-09-01 --json  # lium#295, not released yet
+lium provider earnings --emissions --json  # lium#295, not released yet
+lium provider idle-pay --json  # lium#295, not released yet
+lium provider idle-pay "$NODE" --json  # lium#295, not released yet
+lium provider ledger --from 2026-09-01 --json  # lium#295, not released yet
 ```
 
 `earnings` is rental earnings per UTC day (default: the last 7 days); `--emissions` is the daily incentive instead,
@@ -241,7 +242,7 @@ old-style; the full old-to-new table is in the CLI's `docs/exit-codes.md`.
 
 A reason's `requires` comes from the portal and wins over this table. The `requires` column shows what the fix usually
 needs: `sudo` (root on the GPU host), `reboot` (a human step), `no_rentals` (the node must be free of rentals).
-"Verify" always ends with `lium provider node status "$NODE" --json --watch --until-clear --timeout 1800`.
+"Verify" always ends with `lium provider node status "$NODE" --json --watch --until-clear --timeout 1800` (`--until-clear`: lium#294, not released yet).
 
 **The validator's idle-pay reasons** (`kind: idle_pay`, the codes in `idle_pay_reasons`):
 
@@ -255,7 +256,7 @@ needs: `sudo` (root on the GPU host), `reboot` (a human step), `no_rentals` (the
 | `outdated_executor_image` | The executor image is not the one the network expects | sudo | `docker compose pull && docker compose up -d` in `neurons/executor`. |
 | `price_above_market_p90_soft_limit` | The price is above the market's soft limit | none | `lium provider node update-price "$NODE" --price <required> --json --yes` (the limit is in `required`). |
 | `port_limited_remainder` | A partly rented node has too few free ports for its free GPUs | sudo | Open more ports on the host, or wait for the rental to end. |
-| `miner_default_job` | The node runs the owner's own job instead of Lium jobs | sudo | Stop that job on the host. |
+| `miner_default_job` | The node runs the owner's own default job | sudo | Stop that job on the host. |
 | `provider_discord_not_connected` | No Discord linked: no idle pay, no subnet incentive | human | [Discord linking](#discord-linking), then `lium provider config show --json` shows `data.discord_connected: true`. |
 | `new_rentals_paused` | New rentals are paused on this node (the owner's choice; not gating) | none | Only if the owner wants it: `lium provider node resume "$NODE" --json --yes`. |
 | `spot_tier` | Spot-tier nodes earn no subnet incentive (not gating) | none | Only if the owner wants it: [step 6](#6-list-on-secure-coming-with-the-next-cli-release). |
@@ -319,7 +320,7 @@ The CLI has no command to confirm it. Relay:
 After:
 
 ```bash
-LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email <email> --json
+LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email <email> --json  # lium#295, not released yet
 ```
 
 ### Google-only account
@@ -337,7 +338,7 @@ serves them *(coming with the next CLI release)*:
 > Please create a Lium provider API token with the scopes read, node, tier and register while signed in, and send it
 > to me. I will keep it only as LIUM_PROVIDER_TOKEN, and you can revoke it at any time.
 
-After: `export LIUM_PROVIDER_TOKEN=lpk_...`, then `lium provider portal whoami --json`.
+After: `export LIUM_PROVIDER_TOKEN=lpk_...` (lium#295, not released yet), then `lium provider portal whoami --json`.
 
 ### Reboots and other host steps
 
@@ -350,5 +351,5 @@ a support ticket is a person's step. Do not reboot on your own: a reboot ends an
 After the person answers, restart the executor if the fix says so (`docker compose up -d` in `neurons/executor`), then:
 
 ```bash
-lium provider node status "$NODE" --json --watch --until-clear --timeout 1800
+lium provider node status "$NODE" --json --watch --until-clear --timeout 1800  # lium#294, not released yet
 ```
