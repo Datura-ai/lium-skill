@@ -2570,12 +2570,17 @@ Then:
 - **A rental, not paused**: pause new rentals (the reason's `fix` starts with that step, worded for the portal's
   Pause New Rentals button; `node pause` is the same action), then wait for the rental to end:
 
+Note the current UTC time just before the call (`date -u +%Y-%m-%dT%H:%M:%S`), then pause:
+
 ```bash
 lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
 ```
 
-Record that this flow paused the node only when `pause` answered exit 0 here; only then do you resume it below. If
-`pause` refuses the node as not rented (exit 3, `portal.node_not_rented`, or `portal.request_rejected` with an
+`pause` answers exit 0 on a node that is already paused too, and keeps the first pause's time. So record that this
+flow paused the node only when `pause` exits 0 and `data.new_rentals_pause_requested_at` (UTC, sometimes without a
+zone suffix) is not earlier than the time you noted; only then do you resume it below. An earlier time means the
+owner paused it in the meantime: the pause is not yours. What is left is an owner pause within the clock difference
+between this machine and the portal (seconds on a synced clock). If `pause` refuses the node as not rented (exit 3, `portal.node_not_rented`, or `portal.request_rejected` with an
 `error.message` saying the node must be rented), the rental ended between the two calls: the node is free and you
 did not pause it.
 
@@ -2618,7 +2623,7 @@ change is `portal.tier_change_blocked` (exit 3) with the blocker in `error.data`
 (`rented`: the rental ends; `cluster_member`: the node leaves its cluster). Done when `listing` shows `data.listing_state: "listed"`.
 
 Other node changes: `lium provider node update-price "$NODE" --price 1.85 --json --yes`,
-`lium provider node pause|resume "$NODE" --json --yes` (pause refuses an idle node with `portal.node_not_rented`),
+`lium provider node pause|resume "$NODE" --json --yes` (pause refuses an idle node: exit 3, `portal.node_not_rented`, or `portal.request_rejected` saying the node must be rented),
 `lium provider node min-gpu set "$NODE" 4 --json --yes`.
 
 ### 7. Earnings and idle pay *(coming with the next CLI release)*
@@ -2662,8 +2667,11 @@ stderr: `[<namespaced code>] <message>`.
 | 130 | `input.interrupted` | Ctrl-C stopped the command | Nothing to fix; re-run it if the stop was not meant. |
 
 Only plain text mode (none of `--json`, `LIUM_OUTPUT=json`, `LIUM_NONINTERACTIVE=1`) keeps today's provider exit
-numbers: 1 argument (and no sign-in, and Ctrl-C), 2 auth, 3 portal, 5 SSH, 6 config missing, 7 token-cache race,
-with the UPPER_CASE code at the start of stderr. So does lium 0.9.1 in every mode: it has no agent mode. The CLI's
+numbers, and only for the codes that have an old UPPER_CASE name: 1 argument (and no sign-in, and Ctrl-C), 2 auth,
+3 portal, 5 SSH, 6 config missing, 7 token-cache race, with the UPPER_CASE code at the start of stderr. A code with no
+old name exits by the table above in plain text too, with the namespaced code at the start of stderr: for example
+`node.not_found` 5, `human.handoff_required` and `human.handoff_expired` 12, `portal.not_supported` 3. lium 0.9.1
+has no agent mode and exits by its old numbers in every mode. The CLI's
 `docs/exit-codes.md` shows both maps.
 
 ## Blocking reasons
