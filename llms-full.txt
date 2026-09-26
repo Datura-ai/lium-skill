@@ -66,14 +66,16 @@ send). Copy-paste, with `jq` and the CLI installed:
 set -euo pipefail
 API=https://lium.io/api
 umask 077                                                       # the files below hold credentials
+[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519   # lium up needs an SSH key
 # 1. Account + rent key, no e-mail (0.3 s). The fingerprint is the only login: keep it.
 curl -fsS -X POST $API/auth/signup -H 'Content-Type: application/json' -d '{}' > account.json
-export LIUM_API_KEY=$(jq -r .api_key account.json)
+LIUM_API_KEY=$(jq -er .api_key account.json)                    # fails if the key was not minted (it can be null)
+export LIUM_API_KEY
 # 2. A key that can only pay (session login 0.4 s + mint 0.4 s). It reaches no pods.
 TOKEN=$(curl -fsS -X POST $API/auth/login -H 'Content-Type: application/json' \
-  -d "{\"fingerprint\":\"$(jq -r .fingerprint account.json)\"}" | jq -r .token)
+  -d "{\"fingerprint\":\"$(jq -r .fingerprint account.json)\"}" | jq -er .token)
 bkey=$(curl -fsS -X POST $API/keys -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"agent-billing","scopes":["billing"]}' | jq -r .key)
+  -d '{"name":"agent-billing","scopes":["billing"]}' | jq -er .key)
 # 3a. Card: a Stripe page for a person to pay (0.5 s; nothing is charged until they pay)
 curl -fsS -X POST $API/stripe/create-checkout-session -H "X-API-KEY: $bkey" -H 'Content-Type: application/json' \
   -d '{"amount":10,"success_url":"https://lium.io/billing?success=true","cancel_url":"https://lium.io/billing"}' | jq -r .url
@@ -82,7 +84,7 @@ curl -fsS -X POST $API/stripe/create-checkout-session -H "X-API-KEY: $bkey" -H '
 #   -d '{"amount":10,"crypto_currency":"USDC","crypto_network":"base"}' | jq '{deposit_address,crypto_amount}'
 # 4. Wait for the credit (card: about 2 s after the payment)
 until [ "$(curl -fsS $API/users/me -H "X-API-KEY: $LIUM_API_KEY" | jq '.balance > 0')" = true ]; do sleep 2; done
-# 5. Rent the cheapest matching node; returns when SSH answers (about 20-26 s on a cached image)
+# 5. Rent the cheapest matching node; returns when SSH answers (about 22-26 s on a cached image)
 POD=$(lium up --gpu RTX4090 --ttl 30m --yes --json | jq -r .pod.huid)
 lium exec "$POD" --json "nvidia-smi -L"
 ```
