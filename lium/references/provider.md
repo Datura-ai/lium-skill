@@ -92,12 +92,18 @@ LIUM_PROVIDER_COLDKEY=my-wallet LIUM_PROVIDER_HOTKEY=my-hotkey lium provider por
 LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email owner@example.com --json  # lium#295, not released yet
 # c) an API token: nothing to run, set it once
 export LIUM_PROVIDER_TOKEN=lpk_...  # lium#295, not released yet
-# check any of them
+# check a)
 lium provider portal whoami --json
+# check b) and c)
+lium provider node listing --json  # lium#295, not released yet
 ```
 
-Success: `whoami` answers `{"ok": true, "data": {…}}` with the account. An unconfirmed e-mail account fails at
-`portal login`: see [E-mail confirmation](#e-mail-confirmation).
+Success: `whoami` answers `{"ok": true, "data": {…}}` with the account; `node listing` answers
+`{"ok": true, "data": […]}` with the account's nodes (an empty list on a new account). Do not check b) or c) with
+`whoami`: it needs the hotkey and answers `input.arg_invalid` (exit 2) after a good e-mail or token sign-in. From
+`node listing`, `input.arg_invalid` means no sign-in was found (the token is not set, or `portal login --email` has
+not run on this machine), and exit 6 means the portal refused the token or session. An unconfirmed e-mail account
+fails at `portal login`: see [E-mail confirmation](#e-mail-confirmation).
 
 Once signed in with a) or b), mint a token so later runs need neither the wallet nor the password *(coming with the
 next CLI release; until the portal serves API tokens it answers `portal.not_supported`, exit 3)*:
@@ -157,7 +163,7 @@ lium provider node add --gpu-type H100 --gpu-count 8 --ip 203.0.113.7 --port 808
 ### 4. Diagnose
 
 ```bash
-# every own node: listing_state (rented, listed, hidden, offline, validating) and hidden_reasons
+# every own node: listing_state (rented, listed, hidden, offline, validating), rented_gpu_count and hidden_reasons
 lium provider node listing --json  # lium#295, not released yet
 # one node, with blocking_reasons; exit 10 while anything blocks
 lium provider node get "$NODE" --json --fail-on-blocked  # lium#294, not released yet
@@ -193,27 +199,32 @@ For each gating reason, decide first whether you may fix it at all.
 The one exception: a fix that is only a `lium provider` command (`node min-gpu set`, `node update-price`) changes
 nothing on the host and is yours to run.
 
-Never reboot, and never install or upgrade a driver, on your own, whatever `fix` says: a reboot ends any rental on
-the node.
+Never reboot, never restart the Docker daemon (`systemctl restart docker` or the like), and never install or upgrade
+a driver, on your own, whatever `fix` says: each of them can end the rentals on the node.
 
-**Before a `no_rentals` fix**, pause new rentals first (the reason's `fix` starts with that step, worded for the
-portal's Pause New Rentals button; `node pause` is the same action). Read the node's listing first:
+**Before a `no_rentals` fix**, read the node's listing, then decide whether to pause new rentals:
 
 ```bash
 lium provider node listing "$NODE" --json  # lium#295, not released yet
 ```
 
-If `data.listing_state` is anything other than `rented`, the node is already free: do not pause it, and do not
-resume it later. If it is `rented`, stop new rentals and wait, bounded, for the current one to end:
+The node **has a rental** while `data.rented_gpu_count` is above 0 or `data.listing_state` is `rented`. Test both: a
+partly rented node whose free GPUs are still offered reads `listing_state: "listed"` with `rented_gpu_count` above 0.
+
+- **No rental** (`rented_gpu_count` is 0 and `listing_state` is not `rented`): the node is free. Do not pause it, and
+  do not resume it later. Go straight to the hand-over below.
+- **A rental**: pause new rentals (the reason's `fix` starts with that step, worded for the portal's Pause New
+  Rentals button; `node pause` is the same action), then wait, bounded, for the rental to end:
 
 ```bash
 lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
 ```
 
-Remember that you paused it: only then do you resume it below. If `pause` answers `portal.node_not_rented` (exit 3),
-the rental ended between the two calls: the node is free and you did not pause it. Otherwise re-read `listing` every
-10 minutes, for at most 6 hours, until `data.listing_state` is anything other than `rented`. If the rental is still
-running then, hand over with this message:
+Remember that you paused it: only then do you resume it below. If `pause` refuses the node as not rented (exit 3,
+`portal.node_not_rented`, or `portal.request_rejected` with an `error.message` saying the node must be rented), the
+rental ended between the two calls: the node is free and you did not pause it. Otherwise re-read `listing` every
+10 minutes, for at most 6 hours, until the node has no rental by the same test. If the rental is still running then,
+hand over with this message:
 
 > Node <node_id> needs a fix that interrupts rentals: <fix>. I paused new rentals, but the current rental is still
 > running after 6 hours. Please decide when to do the fix, then tell me when it is done.
@@ -283,8 +294,8 @@ error exits by this one map, whatever its origin, and an old UPPER_CASE code is 
 | 2 | `input.confirmation_required`, `input.input_required`, `input.arg_invalid`, `input.register_token_invalid`, `input.hotkey_conflicts_with_token` | A value or a confirmation nobody could give | Add what `error.hint` names (`--yes` or `LIUM_PROVIDER_ACK=1`, `-k`, `LIUM_PROVIDER_PASSWORD`, a new register token) and re-run once. Never retry unchanged. |
 | 3 | `portal.<detail.code>`, `portal.not_supported` | The portal refused or failed the call | `portal.not_supported` on `config connect-discord` or `portal confirm-email` (with `data.legacy_flow: true`): follow the old flow in [One-time human steps](#one-time-human-steps); do not stop there. On any other command the portal does not serve this route yet: stop using that command. Other codes: act on `error.message`/`error.data`; a 5xx may be retried up to 3 times with backoff. |
 | 4 | `net.unreachable`, `ssh.*` | Nothing answered | Check the network and `--portal-url`; retry with backoff (30 s, 60 s, 120 s). |
-| 5 | `node.not_found`, `portal.executor_not_found`, any `*_not_found` code or portal 404 | The node is not on this account | Re-read the ids with `lium provider node listing --json`. |
-| 6 | `auth.*` (not `auth.refresh_race`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, a portal 401/403 | Signed out, expired or not allowed | Sign in again (`lium provider portal login --force --json`) or use a token with the right scope. Do not loop. |
+| 5 | `node.not_found`, `portal.executor_not_found`, `auth.wallet_not_found`, `host.uuid_not_found`, any other `*_not_found` code or portal 404 | Something the command names does not exist | By code. `auth.wallet_not_found`: this machine has no wallet by those names; fix `LIUM_PROVIDER_COLDKEY` / `LIUM_PROVIDER_HOTKEY` (the wallet and hotkey **names**) or use another sign-in, then re-run once. `host.uuid_not_found`: the executor installer on the host did not report an executor id, so the host setup did not finish; read `error.message`, fix the host and re-run step 3. Any other: the node is not on this account; re-read the ids with `lium provider node listing --json`. |
+| 6 | `auth.*` (not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, a portal 401/403 | Signed out, expired or not allowed | Sign in again (`lium provider portal login --force --json`) or use a token with the right scope. Do not loop. |
 | 7 | `portal.rate_limited` (a portal 429), `auth.refresh_race` | Rate limit, or another `lium provider` process is refreshing the token | Retry: after 60 s on a rate limit, after a few seconds on `auth.refresh_race`. |
 | 10 | `node.blocked.<code>` | The node has a gating blocking reason | Look up `<code>` in [Blocking reasons](#blocking-reasons), fix it, then `node status --watch --until-clear`. |
 | 11 | `node.not_listed_yet` | Registered and waited for, not listed yet | Diagnose (step 4); nothing is lost, the node stays registered. |
@@ -361,16 +372,27 @@ when the code expires (run it again for a new code), exit 12 with `human.handoff
 expires). A portal without handoff sessions answers exit 3, `portal.not_supported`, with `data.legacy_flow: true` and
 `data.legacy_browser_url` in agent mode: that link is the one-time step, see each section.
 
+**Which form to run.** With `--wait`, the message to relay arrives on **stderr while the command is still running**;
+stdout gets its one envelope only when the command ends. If your shell tool shows output only when a command exits,
+or stops a command after a few minutes, run the step **without `--wait`**: it exits 12 at once with the message in
+`error.data` on stdout. Relay it, then wait for the person without running the step again: every run asks the portal
+for a new code, which replaces the one you relayed. Each section says how to check the step afterwards. Use `--wait`
+only when your tool shows stderr as it arrives, with a `--timeout` below the tool's own time limit.
+
 ### Discord linking
 
 Required for idle pay (`provider_discord_not_connected`).
 
 ```bash
+# the message at once (exit 12): for tools that show output only at exit
+lium provider config connect-discord --json  # the handoff: lium#295, not released yet
+# or relay the stderr handoff line while this waits for the person
 lium provider config connect-discord --json --wait --timeout 900  # --wait: lium#295, not released yet
 ```
 
 - **Handoff** (exit 12 at once without `--wait`, or the stderr `handoff` line with it): relay
-  `message_for_human`. Exit 0 (`data.discord_connected: true`) means linked.
+  `message_for_human`. With `--wait`, exit 0 (`data.discord_connected: true`) means linked; without it, check as
+  below.
 - **exit 3, `portal.not_supported` with `data.legacy_flow: true`**: not a reason to stop. Relay, with `<url>` =
   `data.legacy_browser_url`:
 
@@ -380,7 +402,8 @@ lium provider config connect-discord --json --wait --timeout 900  # --wait: lium
 - **lium 0.9.1**: run `lium provider config connect-discord --json --no-wait` and relay the same message with
   `<url>` = `data.authorization_url`.
 
-After the legacy or 0.9.1 relay, poll every 30 s for up to 15 minutes until `data.discord_connected` is `true`:
+After a relay without `--wait`, the legacy relay or the 0.9.1 relay, poll every 30 s for up to 15 minutes until
+`data.discord_connected` is `true` (this reads the account and asks for no new code):
 
 ```bash
 lium provider config show --json
@@ -394,11 +417,16 @@ Confirms the e-mail of an account created with e-mail and password. It runs once
 an e-mail session); there is no code option, only the handoff:
 
 ```bash
+# the message at once (exit 12): for tools that show output only at exit
+lium provider portal confirm-email --json  # lium#295, not released yet
+# or relay the stderr handoff line while this waits for the person
 lium provider portal confirm-email --json --wait --timeout 900  # lium#295, not released yet
 ```
 
 - **Handoff**: relay `message_for_human`; the person enters the code in the portal and follows the mailed link.
-  Exit 0 means confirmed.
+  With `--wait`, exit 0 means confirmed. Without it, wait until the person says they are done, then run
+  `confirm-email --json` once: exit 0 with `data.already_done: true` means confirmed; exit 12 again means it is not,
+  so relay the new message.
 - **exit 3, `portal.not_supported` with `data.legacy_flow: true`**, lium 0.9.1, or `portal login --email` refused
   because the e-mail is not confirmed (the refusal says so in `error.message`). Relay:
 
@@ -428,12 +456,13 @@ serves them *(coming with the next CLI release)*:
 > and send me the token it prints (it is shown once). I will keep it only as LIUM_PROVIDER_TOKEN, and you can revoke
 > it at any time with `lium provider token revoke`.
 
-After: `export LIUM_PROVIDER_TOKEN=lpk_...` (lium#295, not released yet), then `lium provider portal whoami --json`.
+After: `export LIUM_PROVIDER_TOKEN=lpk_...` (lium#295, not released yet), then check it with
+`lium provider node listing --json` (`portal whoami` needs a hotkey, so it refuses a token).
 
 ### Reboots and other host steps
 
 Every fix the [stop rule](#5-fix-then-verify) names is a person's step: `requires` with `reboot` or `no_rentals`,
-`requires_unknown: true`, `sudo` you do not have, new hardware, a faster uplink or a support ticket. Never reboot unattended. Relay:
+`requires_unknown: true`, `sudo` you do not have, new hardware, a faster uplink or a support ticket. Never reboot or restart the Docker daemon unattended. Relay:
 
 > Node <node_id> on <host> needs you for one step: <fix>. I stopped here because it needs <a reboot | an interruption
 > of rentals | root access | new hardware | Lium support | a person's judgement>. Please do it, then tell me when the machine is back up.
