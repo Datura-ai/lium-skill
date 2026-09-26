@@ -237,36 +237,56 @@ Then:
 - **A rental, already paused**: do not call `node pause`, and do not resume the node later: the pause was not yours.
   Wait for the rental to end, as below.
 - **A rental, not paused**: pause new rentals (the reason's `fix` starts with that step, worded for the portal's
-  Pause New Rentals button; `node pause` is the same action), then wait for the rental to end:
+  Pause New Rentals button; `node pause` is the same action), then wait for the rental to end.
 
-Note the current UTC time just before the call (`date -u +%Y-%m-%dT%H:%M:%S`), then pause:
+**Whose pause it is.** The portal writes `new_rentals_pause_requested_at` only while it is `null`: a repeat `pause`
+answers exit 0 and keeps the first time. So read the field immediately before the call, and let that read decide:
 
 ```bash
+date -u +%Y-%m-%dT%H:%M:%S  # this machine's UTC time at the read, for the sanity check below
+lium provider node get "$NODE" --json
+# only when that read shows data.new_rentals_pause_requested_at: null
 lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
 ```
 
-`pause` answers exit 0 on a node that is already paused too, and keeps the first pause's time. So record that this
-flow paused the node only when `pause` exits 0 and `data.new_rentals_pause_requested_at` (UTC, sometimes without a
-zone suffix) is not earlier than the time you noted; only then do you resume it below. An earlier time means the
-owner paused it in the meantime: the pause is not yours. What is left is an owner pause within the clock difference
-between this machine and the portal (seconds on a synced clock). If `pause` refuses the node as not rented (exit 3, `portal.node_not_rented`, or `portal.request_rejected` with an
-`error.message` saying the node must be rented), the rental ended between the two calls: the node is free and you
-did not pause it.
+- `node get` shows `data.new_rentals_pause_requested_at` set: someone paused the node since the listing read. Do not
+  call `pause`; go on as **A rental, already paused**.
+- It is `null`, and `pause` exits 0: **this flow paused the node**. Note that, and the
+  `data.new_rentals_pause_requested_at` that `pause` answered.
+- `pause` refuses the node as not rented (exit 3, `portal.node_not_rented`, or `portal.request_rejected` with an
+  `error.message` saying the node must be rented): the rental ended between the calls. The node is free, and you did
+  not pause it.
+
+As a sanity check, parse the time `pause` answered as UTC (it has no zone suffix) and compare it with this machine's
+UTC time you noted at the read. If it is more than 30 s earlier, something is off (a clock far out, or a pause the
+read missed): do not resume the node yourself, and say so in the pause line of the hand-over (below). Within 30 s,
+the read decides. The one case the read cannot catch: an owner pause that lands between `node get` and `pause`
+(about a second, one `lium` start-up and one call) counts as this flow's and is resumed later.
 
 The wait is bounded: re-read `listing` every 10 minutes, for at most 6 hours, until `data.rented_gpu_count` is 0 (or,
 when it is `null`, `data.listing_state` is not `rented`). If the rental is still running then, hand over with this
-message:
+message and the pause line:
 
-> Node <node_id> needs a fix that interrupts rentals: <fix>. New rentals are paused, but the current rental is still
-> running after 6 hours. Please decide when to do the fix, then tell me when it is done.
+> Node <node_id> needs a fix that interrupts rentals: <fix>. The current rental is still running after 6 hours.
+> Please decide when to do the fix, then tell me when it is done.
 
 Once the node is free, hand the fix itself over as above. After the person has done it and the node is clear
-(below), open it to rentals again, but only if this flow paused it. A pause that was there before is the owner's
-choice: leave it.
+(below), open it to rentals again, but only if this flow paused it and the sanity check passed:
 
 ```bash
 lium provider node resume "$NODE" --json --yes  # lium#295, not released yet
 ```
+
+**The pause line.** Every hand-over during or after a `no_rentals` fix ends with the node's pause state, so no node
+stays paused without the person knowing. Read `lium provider node get "$NODE" --json` right before you send it:
+
+- `data.new_rentals_pause_requested_at` is `null`: "New rentals on <node_id> are open."
+- It is set and this flow paused the node (the fix is not done yet): "I paused new rentals on <node_id> at <time> and
+  will resume them once the fix is done."
+- It is set in any other case (it was paused before this flow, the sanity check failed, or `resume` failed): "New
+  rentals on <node_id> are still paused (since <time> UTC), and I will not resume them: <it was paused before I
+  started | I could not confirm the pause was mine | resume failed: <error.message>>. To take rentals again, run
+  `lium provider node resume <node_id>` or use Resume New Rentals in the portal."
 
 **Everything else** you may fix: run `fix_command` when the reason has one, otherwise do what `fix` says, then run
 `verify_command` when present. Then watch until the node is clear:
@@ -505,7 +525,8 @@ Every fix the [stop rule](#5-fix-then-verify) names is a person's step: `require
 > Node <node_id> on <host> needs you for one step: <fix>. I stopped here because it needs <a reboot | an interruption
 > of rentals | root access | new hardware | Lium support | a person's judgement>. Please do it, then tell me when the machine is back up.
 
-After the person answers, check the node, then resume rentals if you paused them (step 5):
+After the person answers, check the node, then finish [step 5](#5-fix-then-verify): resume new rentals only if this
+flow paused them, and end your answer with the pause line.
 
 ```bash
 lium provider node status "$NODE" --json --watch --until-clear --timeout 1800  # lium#294, not released yet
