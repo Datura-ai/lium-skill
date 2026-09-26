@@ -186,22 +186,30 @@ nothing on the host and is yours to run.
 Never reboot, and never install or upgrade a driver, on your own, whatever `fix` says: a reboot ends any rental on
 the node.
 
-**Before a `no_rentals` fix**, stop new rentals and wait, bounded, for the current one to end:
+**Before a `no_rentals` fix**, read the node's listing first:
 
 ```bash
-lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
 lium provider node listing "$NODE" --json  # lium#295, not released yet
 ```
 
-`pause` refuses a node with no rental (`portal.node_not_rented`, exit 3): it is already free. Otherwise re-read
-`listing` every 10 minutes, for at most 6 hours, until `data.listing_state` is anything other than `rented`. If the rental is
-still running then, hand over with this message:
+If `data.listing_state` is anything other than `rented`, the node is already free: do not pause it, and do not
+resume it later. If it is `rented`, stop new rentals and wait, bounded, for the current one to end:
+
+```bash
+lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
+```
+
+Remember that you paused it: only then do you resume it below. If `pause` answers `portal.node_not_rented` (exit 3),
+the rental ended between the two calls: the node is free and you did not pause it. Otherwise re-read `listing` every
+10 minutes, for at most 6 hours, until `data.listing_state` is anything other than `rented`. If the rental is still
+running then, hand over with this message:
 
 > Node <node_id> needs a fix that interrupts rentals: <fix>. I paused new rentals, but the current rental is still
 > running after 6 hours. Please decide when to do the fix, then tell me when it is done.
 
 Once the node is free, hand the fix itself over as above. After the person has done it and the node is clear
-(below), open it to rentals again:
+(below), open it to rentals again, but only if you paused it here. A pause you did not make is the owner's choice:
+leave it.
 
 ```bash
 lium provider node resume "$NODE" --json --yes  # lium#295, not released yet
