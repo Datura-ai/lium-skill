@@ -62,6 +62,7 @@ FILES=(
   "lium/SKILL.md"
   "lium/references/cli-commands.md"
   "lium/references/sdk-reference.md"
+  "lium/references/provider.md"
 )
 
 install_into() {
