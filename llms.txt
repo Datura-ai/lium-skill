@@ -43,9 +43,9 @@ Provide GPUs (an agent onboarding the owner's GPU machines, unattended):
   blocking-reason table, and the one-time human steps (Discord linking, e-mail confirmation, Google-only accounts,
   reboots) with the exact message to relay.
 - Install on each machine: pip install -U 'lium.io[provider]'   (then: lium provider --help)
-- Non-interactive: LIUM_OUTPUT=json (or --json), --yes (or LIUM_PROVIDER_ACK=1); auth from LIUM_PROVIDER_HOTKEY,
-  LIUM_PROVIDER_TOKEN or LIUM_PROVIDER_PASSWORD with portal login --email (both lium#295, not released yet). Parts
-  are marked "coming with the next CLI release" there.
+- Agent mode: --json, LIUM_OUTPUT=json or LIUM_NONINTERACTIVE=1 (the last two lium#295, not released yet), plus --yes
+  (or LIUM_PROVIDER_ACK=1); auth from LIUM_PROVIDER_HOTKEY, LIUM_PROVIDER_TOKEN or LIUM_PROVIDER_PASSWORD with portal
+  login --email (both lium#295, not released yet). Parts are marked "coming with the next CLI release" there.
 
 Primary resources:
 - Full reference (self-contained):   https://lium.io/llms-full.txt

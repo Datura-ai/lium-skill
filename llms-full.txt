@@ -2375,6 +2375,7 @@ lium --version
 | Variable | What it does |
 |---|---|
 | `LIUM_OUTPUT=json` | Same as `--json` on every `lium provider` command and on `lium mine` *(coming with the next CLI release)*. lium 0.9.1 ignores it for provider commands: pass `--json`. |
+| `LIUM_NONINTERACTIVE=1` | Agent mode without JSON output: no provider prompt reads stdin *(coming with the next CLI release; see [Agent mode](#agent-mode))*. |
 | `LIUM_PROVIDER_ACK=1` | Answers the provider persona gate (the one-time "this changes your provider account" confirmation), like `--yes`. |
 | `LIUM_PROVIDER_HOTKEY` | Hotkey **name** on the coldkey (with `LIUM_PROVIDER_COLDKEY`, the wallet name): sign in with the wallet on this machine. |
 | `LIUM_PROVIDER_TOKEN` | A provider API token (`lpk_…`), sent as `Authorization: Bearer`; no wallet and no password needed *(coming with the next CLI release)*. |
@@ -2395,10 +2396,18 @@ Keep secrets in the environment, not on argv. `lium mine -k` takes the hotkey's 
   exit status. `LIUM_OUTPUT=json` changes nothing there.
 - `--json` and `--yes` work after the subcommand (`lium provider node listing --json`) or on the group
   (`lium provider --json node listing`).
-- Every command that changes something asks the persona gate once per user. Off a terminal or under `--json` it
-  never prompts: it fails with `input.confirmation_required` (exit 2). Pass `--yes` or set `LIUM_PROVIDER_ACK=1`.
 - Branch on `error.code`, not on `message`. From the next CLI release codes are namespaced snake_case and never
-  renamed once shipped, and the old UPPER_CASE code stays in `error.legacy_code`.
+  renamed once shipped (a portal refusal is `portal.<snake_case>`, the portal's own code), and the old UPPER_CASE
+  code stays in `error.legacy_code`.
+
+### Agent mode
+
+*(coming with the next CLI release)* `--json`, `LIUM_OUTPUT=json` or `LIUM_NONINTERACTIVE=1` puts the provider
+commands in agent mode. There a confirmation (the persona gate, or any command that changes something) never reads
+stdin: it fails with `input.confirmation_required` (exit 2), and `--yes` or `LIUM_PROVIDER_ACK=1` is the way through.
+Text mode (none of the three) behaves exactly as the released CLI: the prompt reads stdin, a piped `y` confirms and
+a decline exits 1. Always run in agent mode and pass `--yes` (or set `LIUM_PROVIDER_ACK=1`) on commands that change
+something; on lium 0.9.1 `--yes` and `LIUM_PROVIDER_ACK=1` answer the gate too.
 
 ## The journey
 
@@ -2497,7 +2506,10 @@ Read `gating` from the reason; keep no list of your own. A reason with `kind` `a
 renting whatever its `gating`. An `idle_pay` reason with `gating: false` blocks nothing: the node only earns no idle
 pay, and no action is needed. Until the portal serves the list, the CLI builds it from the validator's last error,
 the listing's hidden reasons and the idle-pay reasons, and marks those nodes `"blocking_reasons_source": "cli_fallback"`
-(each of those entries names its origin in `source`).
+(each of those entries names its origin in `source`). Every reason carries `requires`; a reason nobody has said the
+needs of (a last error, a hidden reason, a code the CLI does not know, or a portal reason sent without `requires`)
+has `"requires_unknown": true`, and the text panel prints `Requires: unknown — hand this step to a person` above
+its fix.
 
 ### 5. Fix, then verify
 
@@ -2506,9 +2518,7 @@ For each gating reason, decide first whether you may fix it at all.
 **Stop and hand over** ([Reboots and other host steps](#reboots-and-other-host-steps)) when any of these holds:
 
 - `requires` contains `reboot` or `no_rentals`;
-- `requires` is missing or empty (the CLI built the list itself, `"blocking_reasons_source": "cli_fallback"`) and
-  `fix` mentions a reboot, a restart, stopping Docker or the executor, or reformatting a disk. Also use the
-  `requires` column of [Blocking reasons](#blocking-reasons) for that code;
+- `requires_unknown` is `true` (treat a reason with no `requires` key at all the same way);
 - the fix needs `sudo` on a host you cannot `sudo` on.
 
 The one exception: a fix that is only a `lium provider` command (`node min-gpu set`, `node update-price`) changes
@@ -2517,7 +2527,8 @@ nothing on the host and is yours to run.
 Never reboot, and never install or upgrade a driver, on your own, whatever `fix` says: a reboot ends any rental on
 the node.
 
-**Before a `no_rentals` fix**, read the node's listing first:
+**Before a `no_rentals` fix**, pause new rentals first (the reason's `fix` starts with that step, worded for the
+portal's Pause New Rentals button; `node pause` is the same action). Read the node's listing first:
 
 ```bash
 lium provider node listing "$NODE" --json  # lium#295, not released yet
@@ -2603,12 +2614,12 @@ error exits by this one map, whatever its origin, and an old UPPER_CASE code is 
 | 2 | `input.confirmation_required`, `input.input_required`, `input.arg_invalid`, `input.register_token_invalid`, `input.hotkey_conflicts_with_token` | A value or a confirmation nobody could give | Add what `error.hint` names (`--yes` or `LIUM_PROVIDER_ACK=1`, `-k`, `LIUM_PROVIDER_PASSWORD`, a new register token) and re-run once. Never retry unchanged. |
 | 3 | `portal.<detail.code>`, `portal.not_supported` | The portal refused or failed the call | `portal.not_supported` on `config connect-discord` or `portal confirm-email` (with `data.legacy_flow: true`): follow the old flow in [One-time human steps](#one-time-human-steps); do not stop there. On any other command the portal does not serve this route yet: stop using that command. Other codes: act on `error.message`/`error.data`; a 5xx may be retried up to 3 times with backoff. |
 | 4 | `net.unreachable`, `ssh.*` | Nothing answered | Check the network and `--portal-url`; retry with backoff (30 s, 60 s, 120 s). |
-| 5 | `node.not_found`, `portal.executor_not_found` | The node is not on this account | Re-read the ids with `lium provider node listing --json`. |
-| 6 | `auth.*` | Signed out, expired or not allowed | Sign in again (`lium provider portal login --force --json`) or use a token with the right scope. Do not loop. |
-| 7 | `portal.rate_limited` (a portal 429) | Rate limit or a token-cache race | Wait 60 s and retry. |
+| 5 | `node.not_found`, `portal.executor_not_found`, any `*_not_found` code or portal 404 | The node is not on this account | Re-read the ids with `lium provider node listing --json`. |
+| 6 | `auth.*` (not `auth.refresh_race`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, a portal 401/403 | Signed out, expired or not allowed | Sign in again (`lium provider portal login --force --json`) or use a token with the right scope. Do not loop. |
+| 7 | `portal.rate_limited` (a portal 429), `auth.refresh_race` | Rate limit, or another `lium provider` process is refreshing the token | Retry: after 60 s on a rate limit, after a few seconds on `auth.refresh_race`. |
 | 10 | `node.blocked.<code>` | The node has a gating blocking reason | Look up `<code>` in [Blocking reasons](#blocking-reasons), fix it, then `node status --watch --until-clear`. |
 | 11 | `node.not_listed_yet` | Registered and waited for, not listed yet | Diagnose (step 4); nothing is lost, the node stays registered. |
-| 12 | `human.handoff_required`, `human.handoff_expired` | A person has to act | Relay `error.data.message_for_human` ([One-time human steps](#one-time-human-steps)), wait for the person, then re-run. |
+| 12 | `human.handoff_required`, `human.handoff_expired` | A person has to act | Relay `error.data.message_for_human` ([One-time human steps](#one-time-human-steps)), wait for the person, then re-run. A `--wait` that timed out is `human.handoff_required` with `error.data.waited_s`: the person has not finished; a re-run asks for a new code, so relay the new message. |
 
 Text mode (no `--json`, no `LIUM_OUTPUT=json`) keeps today's provider exit numbers: 1 argument, 2 auth, 3 portal,
 5 SSH, 6 config missing, 7 token-cache race; so does lium 0.9.1 in every mode. The CLI's `docs/exit-codes.md`
@@ -2616,9 +2627,9 @@ shows both maps.
 
 ## Blocking reasons
 
-A reason's `requires` comes with the reason and wins over this table; when it is missing or empty, use this column.
-It names what the fix needs: `sudo` (root on the GPU host), `reboot` and `no_rentals` (both a
-[hand-over](#5-fix-then-verify)).
+The reason's own `requires` and `requires_unknown` decide ([stop rule](#5-fix-then-verify)); the `requires` column
+shows what comes with each code. It names what the fix needs: `sudo` (root on the GPU host), `reboot` and
+`no_rentals` (both a hand-over); "none" is an empty list.
 "Verify" always ends with `lium provider node status "$NODE" --json --watch --until-clear --timeout 1800` (`--until-clear`: lium#294, not released yet).
 
 **The validator's idle-pay reasons** (`kind: idle_pay`, the codes in `idle_pay_reasons`):
@@ -2628,30 +2639,32 @@ It names what the fix needs: `sudo` (root on the GPU host), `reboot` and `no_ren
 | `nvidia_driver_below_minimum` | The NVIDIA driver is older than the network minimum (580.65.06 today) | sudo, reboot, no_rentals | Hand over: upgrade the driver, reboot, restart the executor (`docker compose up -d` in `neurons/executor`). |
 | `sysbox_not_enabled` | The executor does not run the sysbox runtime | sudo, no_rentals | Hand over: install and enable sysbox, restart the executor. |
 | `insufficient_disk_for_vram` | Total disk is below the required share of GPU VRAM (`measured` vs `required`, in GB) | sudo, no_rentals | Hand over: give the host at least `required` GB of disk. |
-| `flagship_without_ncu_or_split` | An idle 8x flagship offers no NCU profiling, GPU splitting or confidential computing | no_rentals, reboot (profiling path) | Yours, no reboot: `lium provider node min-gpu set "$NODE" <n> --json --yes` with `n` below the full node. Otherwise hand over: open the profiling counters (`NVreg_RestrictProfilingToAdminUsers=0`, then reboot), or run in a confidential VM. |
-| `cannot_apply_gpu_power_cap` | The executor container cannot run `nvidia-smi -pl` | sudo, no_rentals | Hand over: `docker compose pull && docker compose up -d` in `neurons/executor`; a custom compose needs `privileged: true`. |
-| `outdated_executor_image` | The executor image is not the current release | sudo | Do what the reason's `fix` says (the validator's text): on a standard stack, check that `executor-executor-runner-1` and `executor-watchtower-1` are running (`docker ps`) so Watchtower redeploys the current image; if auto-update stopped, hand over with the `docs_url` (https://docs.lium.io/providers/nodes/gpu-power-cap#the-standard-stack-which-stopped-updating). |
+| `flagship_without_ncu_or_split` | An idle 8x flagship offers no NCU profiling, GPU splitting or confidential computing | sudo, reboot, no_rentals | Yours, no reboot: `lium provider node min-gpu set "$NODE" <n> --json --yes` with `n` below the full node. Otherwise hand over: open the profiling counters (`NVreg_RestrictProfilingToAdminUsers=0`, then reboot), or run in a confidential VM. |
+| `cannot_apply_gpu_power_cap` | The executor container cannot run `nvidia-smi -pl` | none; sudo, no_rentals when the node container runs under sysbox | `docker compose pull && docker compose up -d` in `neurons/executor`; a custom compose needs `privileged: true`. |
+| `outdated_executor_image` | The executor image is not the current release | none | Do what the reason's `fix` says (the validator's text): on a standard stack, check that `executor-executor-runner-1` and `executor-watchtower-1` are running (`docker ps`) so Watchtower redeploys the current image; if auto-update stopped, hand over with the `docs_url` (https://docs.lium.io/providers/nodes/gpu-power-cap#the-standard-stack-which-stopped-updating). |
 | `price_above_market_p90_soft_limit` | The price is above the market's soft limit | none | `lium provider node update-price "$NODE" --price <required> --json --yes` (the limit is in `required`). |
 | `port_limited_remainder` | A partly rented node has too few free ports for its free GPUs | sudo | Open more ports on the host, or wait for the rental to end. |
-| `miner_default_job` | The node runs the owner's own default job | sudo | Stop that job on the host. |
-| `provider_discord_not_connected` | No Discord linked: no idle pay, no subnet incentive | human | [Discord linking](#discord-linking), then `lium provider config show --json` shows `data.discord_connected: true`. |
+| `miner_default_job` | The node runs the owner's own default job | none | Stop that job on the host. |
+| `provider_discord_not_connected` | No Discord linked: no idle pay, no subnet incentive | none (a human step) | [Discord linking](#discord-linking), then `lium provider config show --json` shows `data.discord_connected: true`. |
 | `new_rentals_paused` | New rentals are paused on this node (the owner's choice; not gating) | none | Only if the owner wants it: `lium provider node resume "$NODE" --json --yes`. |
 | `spot_tier` | Spot-tier nodes earn no subnet incentive (not gating) | none | Only if the owner wants it: [step 6](#6-list-on-secure-coming-with-the-next-cli-release). |
-| `banned_network_abuse` | The node is banned for network abuse | human | Human step: the owner contacts Lium support. Do not retry. |
+| `banned_network_abuse` | The node is banned for network abuse | none (a human step) | Human step: the owner contacts Lium support. Do not retry. |
 | `gpu_model_not_eligible_for_unrented_incentive` | This GPU model is not in the idle-pay program (`gating: false`) | none | No action: the model earns from rentals only. |
 | `no_unrented_capacity_for_gpu_count` | No idle-pay room for this node size this cycle (`gating: false`) | none | No action: rentals still pay, and room opens as the market moves. |
 
-**Reachability** (`kind: availability`, the listing's `hidden_reasons`) always blocks renting:
+**Reachability** (`kind: availability`, the listing's `hidden_reasons`) always blocks renting. Built by the CLI,
+these come with `requires_unknown: true`: hand the fix over. Fix one yourself only when the portal serves the reason
+with a `requires` the [stop rule](#5-fix-then-verify) lets through.
 
-| `code` | Meaning | `requires` | Fix, then verify |
-|---|---|---|---|
-| `NOT_RESPONDING` | The validator cannot reach the executor | sudo | Start the executor (`docker compose up -d` in `neurons/executor`) and open its port to the internet. |
-| `NOT_ACTIVE`, `NOT_VERIFIED` | The node has not passed a validator check yet | none | Wait for the next check, or fix the error `node status` reports. |
-| `DISK_TOO_FULL` | Disk more than 90% used | sudo | Free disk until at most 90% is used, within the limits below. |
-| `DISK_FREE_TOO_LOW` | Too little free disk | sudo | Free disk within the limits below; a larger disk is a hand-over. |
-| `DISK_NOT_REPORTED` | The executor does not report its disk | sudo | Hand over (restarts the executor): update and restart the executor. |
-| `NETWORK_TOO_SLOW` | The uplink is below the minimum | human | Human step: move the node to a faster uplink. |
-| `GPU_COUNT_UNKNOWN` | The validator could not read the GPUs | sudo | Hand over (restarts the executor): restart the executor. |
+| `code` | Meaning | Fix, then verify |
+|---|---|---|
+| `NOT_RESPONDING` | The validator cannot reach the executor | Start the executor (`docker compose up -d` in `neurons/executor`) and open its port to the internet. |
+| `NOT_ACTIVE`, `NOT_VERIFIED` | The node has not passed a validator check yet | Wait for the next check, or fix the error `node status` reports. |
+| `DISK_TOO_FULL` | Disk more than 90% used | Free disk until at most 90% is used, within the limits below. |
+| `DISK_FREE_TOO_LOW` | Too little free disk | Free disk within the limits below; a larger disk is a hand-over. |
+| `DISK_NOT_REPORTED` | The executor does not report its disk | Update and restart the executor. |
+| `NETWORK_TOO_SLOW` | The uplink is below the minimum | Move the node to a faster uplink. |
+| `GPU_COUNT_UNKNOWN` | The validator could not read the GPUs | Restart the executor. |
 
 Freeing disk unattended: delete only logs, caches and files the owner named. Never delete Docker volumes, images or
 containers (no `docker system prune`, no `docker volume rm`): a rental may be using them. If that does not free
@@ -2660,22 +2673,24 @@ enough, hand over.
 `NEW_RENTALS_PAUSED`, `RECLAIMING`, `WHOLE_HOST_ONLY` and `SPLIT_MINIMUM_NOT_MET` hide the node without blocking it:
 they are the owner's choice or the normal shape of a partial rental.
 
-**The validator's last error** (`kind: last_error`) always blocks renting. `code` is the validator's reason code;
-do what `fix` says (the validator's own remediation), then verify.
+**The validator's last error** (`kind: last_error`) always blocks renting. `code` is the validator's reason code and
+`fix` its own remediation. Built by the CLI it has `requires_unknown: true`: relay `fix` in the hand-over message.
 
 ## One-time human steps
 
 These steps need a person once. Stop, send the message exactly as written (fill in the `<…>` values), wait for the
 answer, then run the command under "After".
 
-*(coming with the next CLI release)* The CLI asks the portal for a handoff: one URL plus a short code. The command
-exits 12 with `{"ok": false, "error": {"code": "human.handoff_required", "exit_code": 12, "data": {"step",
+*(coming with the next CLI release)* In agent mode, or with `--wait`, the CLI asks the portal for a handoff: one URL
+plus a short code. (Text mode without `--wait` runs `connect-discord`'s browser flow, as the released CLI does;
+`confirm-email` is always a handoff.) Without `--wait` the command exits 12 with `{"ok": false, "error": {"code": "human.handoff_required", "exit_code": 12, "data": {"step",
 "handoff_id", "handoff_url", "code", "expires_at", "message_for_human"}}}`. Relay `data.message_for_human` verbatim.
 With `--wait [--timeout N]` the command first prints the same data as one `{"event": "handoff", …}` line on stderr
 (relay its `message_for_human`), then polls: exit 0 when the person is done, exit 12 with `human.handoff_expired`
 when the code expires (run it again for a new code), exit 12 with `human.handoff_required` and `data.waited_s` when
-`--timeout` passes first. A portal without handoff sessions answers exit 3, `portal.not_supported`, with
-`data.legacy_flow: true` and `data.legacy_browser_url`: that link is the one-time step, see each section.
+`--timeout` passes first (with `--wait`, `--timeout` counts only when given; otherwise it waits until the code
+expires). A portal without handoff sessions answers exit 3, `portal.not_supported`, with `data.legacy_flow: true` and
+`data.legacy_browser_url` in agent mode: that link is the one-time step, see each section.
 
 ### Discord linking
 
@@ -2748,12 +2763,11 @@ After: `export LIUM_PROVIDER_TOKEN=lpk_...` (lium#295, not released yet), then `
 
 ### Reboots and other host steps
 
-Every fix the [stop rule](#5-fix-then-verify) names is a person's step: `requires` with `reboot` or `no_rentals`, a
-fix text (with no `requires`) that reboots, restarts, stops Docker or the executor, or reformats, `sudo` you do not
-have, new hardware, a faster uplink or a support ticket. Never reboot unattended. Relay:
+Every fix the [stop rule](#5-fix-then-verify) names is a person's step: `requires` with `reboot` or `no_rentals`,
+`requires_unknown: true`, `sudo` you do not have, new hardware, a faster uplink or a support ticket. Never reboot unattended. Relay:
 
 > Node <node_id> on <host> needs you for one step: <fix>. I stopped here because it needs <a reboot | an interruption
-> of rentals | root access | new hardware | Lium support>. Please do it, then tell me when the machine is back up.
+> of rentals | root access | new hardware | Lium support | a person's judgement>. Please do it, then tell me when the machine is back up.
 
 After the person answers, check the node, then resume rentals if you paused them (step 5):
 
