@@ -62,7 +62,10 @@ FILES=(
   "lium/SKILL.md"
   "lium/references/cli-commands.md"
   "lium/references/sdk-reference.md"
+  "lium/references/provider.md"
 )
+# Added after the first refs: a LIUM_SKILL_VERSION pinned before them has no such file, so a 404 skips it.
+OPTIONAL_FILES=" lium/references/provider.md "
 
 install_into() {
   local target_root="$1" label="$2"
@@ -80,9 +83,15 @@ install_into() {
       cp "$out" "$out.bak"
     fi
 
-    if ! curl -fsSL "$url" -o "$out"; then
+    if ! curl -fsSL "$url" -o "$out.part"; then
+      rm -f "$out.part"
+      if [[ "$OPTIONAL_FILES" == *" $rel "* ]]; then
+        warn "skipped $rel: not at ref $LIUM_SKILL_VERSION"
+        continue
+      fi
       fail "failed to download $url"
     fi
+    mv "$out.part" "$out"
   done
   ok "Installed $label skill ($(wc -l < "$dest/SKILL.md" | tr -d ' ') lines in SKILL.md)"
 }

@@ -36,12 +36,26 @@ Sign up without an email (headless — the fingerprint is a 32-char string, not 
   Returns fingerprint (dashboard login, shown once, no recovery) and api_key when minting succeeds.
   api_key can be null; signup credit also depends on the platform setting and prior use of the IP.
 
+Provide GPUs (an agent onboarding the owner's GPU machines, unattended):
+- Provider journey for agents: https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/provider.md
+  install, sign in, add a node, diagnose, fix, list on Secure, earnings and idle pay; copy-paste commands with --json
+  and --yes, the exit-code and error-code table (10 node blocked, 11 not listed yet, 12 a person has to act), the
+  blocking-reason table, and the one-time human steps (Discord linking, e-mail confirmation, Google-only accounts,
+  reboots) with the exact message to relay.
+- Install on each machine: pip install -U 'lium.io[provider]'   (then: lium provider --help)
+- Agent mode comes with the next CLI release (lium#295): --json, LIUM_OUTPUT=json or LIUM_NONINTERACTIVE=1, plus
+  --yes (or LIUM_PROVIDER_ACK=1). The released CLI has no agent mode: its --json still reads the persona prompt
+  from stdin, so pass --yes there too. Auth from LIUM_PROVIDER_HOTKEY, or LIUM_PROVIDER_TOKEN or
+  LIUM_PROVIDER_PASSWORD with portal login --email (both lium#295, not released yet). Parts are marked "coming with
+  the next CLI release" there.
+
 Primary resources:
 - Full reference (self-contained):   https://lium.io/llms-full.txt
 - Agent guide (docs site):           https://docs.lium.io/developers/agents.md
 - Skill file (with frontmatter):     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/SKILL.md
 - CLI reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/cli-commands.md
 - SDK reference:                     https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/sdk-reference.md
+- Provider journey (agents):         https://raw.githubusercontent.com/Datura-ai/lium-skill/main/lium/references/provider.md
 - CLI installer source:              https://raw.githubusercontent.com/Datura-ai/lium/main/scripts/install.sh
 - Skills installer source:           https://raw.githubusercontent.com/Datura-ai/lium-skill/main/agents/install.sh
 
