@@ -17,3 +17,5 @@ provider ledger|*|lium#295
 provider token|*|lium#295
 provider portal login|--email|lium#295
 mine|--json|lium#295
+provider config connect-discord|--wait|lium#295
+provider portal confirm-email|*|lium#295
