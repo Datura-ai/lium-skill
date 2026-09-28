@@ -64,7 +64,8 @@ FILES=(
   "lium/references/sdk-reference.md"
   "lium/references/provider.md"
 )
-# Added after the first refs: a LIUM_SKILL_VERSION pinned before them has no such file, so a 404 skips it.
+# Added after the first refs: a LIUM_SKILL_VERSION pinned before them has no such file, so a 404 skips it. Any other
+# failure (network error, 5xx) stops the install, so SKILL.md never points at a missing or stale copy.
 OPTIONAL_FILES=" lium/references/provider.md "
 
 install_into() {
@@ -83,13 +84,15 @@ install_into() {
       cp "$out" "$out.bak"
     fi
 
-    if ! curl -fsSL "$url" -o "$out.part"; then
+    local rc=0 http_code
+    http_code=$(curl -fsSL -w '%{http_code}' "$url" -o "$out.part") || rc=$?
+    if [[ $rc -ne 0 ]]; then
       rm -f "$out.part"
-      if [[ "$OPTIONAL_FILES" == *" $rel "* ]]; then
+      if [[ $rc -eq 22 && "$http_code" == 404 && "$OPTIONAL_FILES" == *" $rel "* ]]; then
         warn "skipped $rel: not at ref $LIUM_SKILL_VERSION"
         continue
       fi
-      fail "failed to download $url"
+      fail "failed to download $url (curl exit $rc, HTTP ${http_code:-none})"
     fi
     mv "$out.part" "$out"
   done
