@@ -1763,13 +1763,13 @@ lium topup create -a 20 -c USDT -n tron --json
 
 ## lium mine
 
-Bootstrap a Subnet-51 **provider** machine: clone `Datura-ai/lium-io` into
+Bootstrap a **provider** machine: clone `Datura-ai/lium-io` into
 `compute-subnet`, install the executor tooling, write `neurons/executor/.env` and
 start the executor container. It runs on the GPU host you are contributing, not
 on a renter's laptop.
 
 `lium provider --help` calls this "renter workflows" — that blurb is wrong; the
-code clones and starts a miner executor.
+code clones and starts a provider executor.
 
 ```bash
 lium mine [OPTIONS]
@@ -1782,7 +1782,7 @@ lium mine [OPTIONS]
 
 ## lium provider
 
-Provider-side commands for Subnet 51 mining — a different persona from `lium mine`.
+Provider-side commands — a different persona from `lium mine`.
 Hotkey registration on SN51 itself is done with `btcli subnet register`, not here.
 
 ```bash
