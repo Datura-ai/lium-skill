@@ -2446,7 +2446,7 @@ the [exit table](#exit-codes-and-error-codes). lium 0.9.1 has only a): there `wh
 `auth_method`. An unconfirmed e-mail account fails at `portal login`: see [E-mail confirmation](#e-mail-confirmation).
 
 **A token is a secret.** This covers every provider token (`lpk_…`), one the person gives you and one you mint
-below. `LIUM_PROVIDER_TOKEN` comes from your environment or secret settings, set there by the person. Never type a
+below. `LIUM_PROVIDER_TOKEN` (lium#295) comes from your environment or secret settings, set there by the person. Never type a
 token on a command line: no `export` of it, and no assignment in front of a command. Never echo, print or log it
 (no `echo` of the variable, no `env` or `printenv`), and never put it in a file or an answer. If a
 token lands in the chat anyway, do not use or repeat it: ask the person to revoke it and set a new one in your
@@ -2473,7 +2473,7 @@ lium provider token revoke <TOKEN_ID> --json --yes  # lium#295, not released yet
 
 The secret appears **once**, in the `data` of that `token create` output; `token list` never shows it. Do not
 repeat it in an answer, a file or a later command. Ask the person to copy it from that output into
-`LIUM_PROVIDER_TOKEN` in your environment or secret settings, then check with `lium provider portal whoami --json`
+`LIUM_PROVIDER_TOKEN` (lium#295) in your environment or secret settings, then check with `lium provider portal whoami --json`
 (`data.auth_method: "token"`).
 
 ### 2. Get a register token *(coming with the next CLI release)*
@@ -2732,8 +2732,8 @@ has no agent mode and exits by its old numbers in every mode. The CLI's
 The reason's own `requires` and `requires_unknown` decide ([stop rule](#5-fix-then-verify)); the `requires` column
 shows what comes with each code. It names what the fix needs: `sudo` (root on the GPU host), `reboot` and
 `no_rentals` (both a hand-over); "none" is an empty list.
-"Verify" always ends with the watch of [step 5](#5-fix-then-verify): `lium provider node status "$NODE" --json --watch --until-clear --timeout 300`
-(`--until-clear`: lium#294, not released yet), re-run until clear or for 1800 s in total, and clear only on exit 0
+"Verify" always ends with the watch of [step 5](#5-fix-then-verify): `lium provider node status "$NODE" --json --watch --until-clear --timeout 300` (`--until-clear`: lium#294, not released yet),
+re-run until clear or for 1800 s in total, and clear only on exit 0
 with no blocking entry in the last stdout object's `data.blocking_reasons` (the [step 4](#4-diagnose) rule; an
 entry without `kind` counts as idle pay).
 
@@ -2880,9 +2880,9 @@ serves them *(coming with the next CLI release)*. Ask for the `read` scope only 
 `node` and `tier` only when the owner wants you to change their nodes (price, pause, GPU minimum, tier). Relay:
 
 > Please create a Lium provider API token for me on a machine where you are signed in to the Lium provider CLI:
-> `lium provider token create --name my-agent --scope read --expires-days 30 --json --yes` (add
+> `lium provider token create --name my-agent --scope read --expires-days 30 --json --yes` (add <!-- lium#295, not released yet -->
 > `--scope node --scope tier` only if you want me to change your nodes' price, pause state or tier). Do not paste
-> the token into this chat: set it yourself as `LIUM_PROVIDER_TOKEN` in my environment or secret settings, then tell
+> the token into this chat: set it yourself as `LIUM_PROVIDER_TOKEN` in my environment or secret settings, then tell <!-- lium#295, not released yet -->
 > me when it is set. It expires in 30 days, and you can revoke it at any time with `lium provider token revoke`.
 
 After the person says it is set, check it without printing it: `lium provider portal whoami --json` answers
