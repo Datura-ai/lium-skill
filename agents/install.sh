@@ -65,24 +65,21 @@ FILES=(
   "lium/references/provider.md"
 )
 # Added after the first refs: a LIUM_SKILL_VERSION pinned before them has no such file, so a 404 skips it. Any other
-# failure (network error, 5xx) stops the install, so SKILL.md never points at a missing or stale copy.
+# failure (network error, 5xx) fails the install (exit 1) before any installed file is replaced.
 OPTIONAL_FILES=" lium/references/provider.md "
 
 install_into() {
   local target_root="$1" label="$2"
   local dest="$target_root/lium"
+  local staged=()
   info "Installing lium skill → $dest ($label, ref: $LIUM_SKILL_VERSION)"
   mkdir -p "$dest/references"
+  # Download every file to *.part first; move them into place only once all have arrived.
   for rel in "${FILES[@]}"; do
     local dest_rel="${rel#lium/}"
     local url="$RAW_BASE/$rel"
     local out="$dest/$dest_rel"
     mkdir -p "$(dirname "$out")"
-
-    # Preserve user edits: back up existing file unless --force
-    if [[ -f "$out" && $force -eq 0 ]]; then
-      cp "$out" "$out.bak"
-    fi
 
     local rc=0 http_code
     http_code=$(curl -fsSL -w '%{http_code}' "$url" -o "$out.part") || rc=$?
@@ -92,7 +89,15 @@ install_into() {
         warn "skipped $rel: not at ref $LIUM_SKILL_VERSION"
         continue
       fi
+      for out in ${staged[@]+"${staged[@]}"}; do rm -f "$out.part"; done
       fail "failed to download $url (curl exit $rc, HTTP ${http_code:-none})"
+    fi
+    staged+=("$out")
+  done
+  for out in ${staged[@]+"${staged[@]}"}; do
+    # Preserve user edits: back up existing file unless --force
+    if [[ -f "$out" && $force -eq 0 ]]; then
+      cp "$out" "$out.bak"
     fi
     mv "$out.part" "$out"
   done

@@ -2410,8 +2410,9 @@ commands in agent mode, and whichever is set, one [exit map](#exit-codes-and-err
 at the start of stderr (`[auth.not_signed_in] not signed in to the provider portal`). In agent mode a confirmation
 (the persona gate, or any command that changes something) never reads stdin: it fails with
 `input.confirmation_required` (exit 2), and `--yes` or `LIUM_PROVIDER_ACK=1` is the way through. Ctrl-C is
-`input.interrupted` (exit 130), except in `node status` (with or without `--watch`), which exits 0 on Ctrl-C in every
-mode: see [step 5](#5-fix-then-verify) for how to read its exit 0. Plain text mode (none of the three) behaves
+`input.interrupted` (exit 130). `node status` is the one command where Ctrl-C can still exit 0: always with plain
+`--watch` in a terminal, and in every mode on lium 0.9.1 and early builds of lium#294. So an exit 0 from
+`node status` is never proof on its own: see [step 5](#5-fix-then-verify). Plain text mode (none of the three) behaves
 exactly as the released CLI: the prompt reads stdin, a piped `y` confirms, a decline or Ctrl-C exits 1, and errors
 keep the old exit numbers. Always run in agent mode, and pass `--yes` on each command that changes something, one
 command at a time. Prefer it to exporting `LIUM_PROVIDER_ACK=1`, which confirms every later command of the session
@@ -2432,8 +2433,7 @@ The account decides the path. A person who signs in to the portal with Google ha
 LIUM_PROVIDER_COLDKEY=my-wallet LIUM_PROVIDER_HOTKEY=my-hotkey lium provider portal login --json
 # b) e-mail and password
 LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email owner@example.com --json  # lium#295, not released yet
-# c) an API token: nothing to run, set it once
-export LIUM_PROVIDER_TOKEN=lpk_...  # lium#295, not released yet
+# c) an API token: nothing to run; the person sets LIUM_PROVIDER_TOKEN in your environment or secret settings
 # check any of them
 lium provider portal whoami --json  # with a token or an e-mail session: lium#295, not released yet
 ```
@@ -2444,6 +2444,13 @@ command signs in with the first of: `LIUM_PROVIDER_TOKEN`, the hotkey, the `port
 `LIUM_PROVIDER_TOKEN` when you mean to use another. With none, `whoami` answers `auth.not_signed_in` (exit 6): see
 the [exit table](#exit-codes-and-error-codes). lium 0.9.1 has only a): there `whoami` needs the hotkey and answers no
 `auth_method`. An unconfirmed e-mail account fails at `portal login`: see [E-mail confirmation](#e-mail-confirmation).
+
+**A token is a secret.** This covers every provider token (`lpk_…`), one the person gives you and one you mint
+below. `LIUM_PROVIDER_TOKEN` comes from your environment or secret settings, set there by the person. Never type a
+token on a command line: no `export` of it, and no assignment in front of a command. Never echo, print or log it
+(no `echo` of the variable, no `env` or `printenv`), and never put it in a file or an answer. If a
+token lands in the chat anyway, do not use or repeat it: ask the person to revoke it and set a new one in your
+environment.
 
 Commands work with any of the three, `node list` and `billing list` included (scoped to the account's hotkey), with
 these exceptions *(coming with the next CLI release)*:
@@ -2464,7 +2471,10 @@ lium provider token list --json  # lium#295, not released yet
 lium provider token revoke <TOKEN_ID> --json --yes  # lium#295, not released yet
 ```
 
-`data` of `token create` has the secret **once**. Store it as `LIUM_PROVIDER_TOKEN`; `token list` never shows it.
+The secret appears **once**, in the `data` of that `token create` output; `token list` never shows it. Do not
+repeat it in an answer, a file or a later command. Ask the person to copy it from that output into
+`LIUM_PROVIDER_TOKEN` in your environment or secret settings, then check with `lium provider portal whoami --json`
+(`data.auth_method: "token"`).
 
 ### 2. Get a register token *(coming with the next CLI release)*
 
@@ -2524,14 +2534,19 @@ lium provider node status "$NODE" --json
 `node get` puts every reason the node is kept off the listing or out of idle pay in `data.blocking_reasons`
 *(coming with the next CLI release)*. With `--fail-on-blocked` a blocked node is one envelope:
 `{"ok": false, "error": {"code": "node.blocked.<first reason's code>", "exit_code": 10, "data": <the node>}}`.
-Each reason has `kind`, `code`, `gating`, `message`, `measured`, `required`, `fix`, `fix_command`, `verify_command`,
-`requires` and `docs_url`. What to do per code is in [Blocking reasons](#blocking-reasons).
+A reason has `code`, `gating`, `message`, `measured`, `required`, `fix`, `fix_command`, `verify_command`,
+`requires` and `docs_url`, and `kind` when the portal serves it (the CLI's fallback entries below may have no
+`kind`). What to do per code is in [Blocking reasons](#blocking-reasons).
 
-Read `gating` from the reason; keep no list of your own. A reason with `kind` `availability` or `last_error` blocks
-renting whatever its `gating`. An `idle_pay` reason with `gating: false` blocks nothing: the node only earns no idle
-pay, and no action is needed. Until the portal serves the list, the CLI builds it from the validator's last error,
-the listing's hidden reasons and the idle-pay reasons, and marks those nodes `"blocking_reasons_source": "cli_fallback"`
-(each of those entries names its origin in `source`). Every reason carries `requires`; a reason nobody has said the
+Read `gating` from the reason; keep no list of your own. A reason **blocks** when it has `gating: true`, or when
+its `kind` is `availability` or `last_error` (those block renting whatever their `gating`). A reason without `kind`
+counts as `idle_pay`, as the CLI reads it, and a reason without `gating` blocks unless the
+[table](#blocking-reasons) marks its code `gating: false`. An `idle_pay` reason with `gating: false` blocks nothing:
+the node only earns no idle pay, and no action is needed. Until the portal serves the list, the CLI builds it from
+the validator's last error, the listing's hidden reasons and the idle-pay reasons, and marks those nodes
+`"blocking_reasons_source": "cli_fallback"` (each of those entries names its origin in `source`). Those fallback
+entries may have no `kind`: a hidden-reason or idle-pay entry carries only `gating`, so read it by that.
+Every reason carries `requires`; a reason nobody has said the
 needs of (a last error, a hidden reason, a code the CLI does not know, or a portal reason sent without `requires`)
 has `"requires_unknown": true`, and the text panel prints `Requires: unknown — hand this step to a person` above
 its fix.
@@ -2612,14 +2627,14 @@ its answer. Read `lium provider node get "$NODE" --json` right before you send t
     before I started";
   - otherwise (a different time, or you never paused): "they were paused at <time>, which was not my pause call".
 - The `node get` fails (any non-zero exit): still send the line, from what you saw last: "I could not read the pause
-  state of <node_id> just now (<error.code>). When I last checked, new rentals were <paused by my pause call at
-  <time> UTC | paused before I started | open>." Then the resume sentence above whenever they may be paused.
+  state of <node_id> just now (<error.code>). When I last checked, new rentals were <paused since <time> UTC, after
+  my pause call | paused before I started | open>." Then the resume sentence above whenever they may be paused.
 
 **Everything else** you may fix: run `fix_command` when the reason has one, otherwise do what `fix` says, then run
 `verify_command` when present. Then watch until the node is clear:
 
 ```bash
-# one JSON object per refresh on stdout; exit 10 at the timeout; exit 0 when clear AND on Ctrl-C: read the last object
+# one JSON object per refresh on stdout; exit 10 at the timeout, 130 on Ctrl-C; exit 0 alone is not proof: read the last object
 lium provider node status "$NODE" --json --watch --until-clear --timeout 300  # lium#294, not released yet
 ```
 
@@ -2628,9 +2643,13 @@ clear. Give `--timeout` a value below your shell tool's own time limit (300 s ab
 sooner), and re-run the command until the node is clear or 1800 s have passed in total. After each run:
 
 - **Clear** only when the command exits 0 **and** the last JSON object on stdout has `data.blocking_reasons` with no
-  gating entry (every entry left, if any, is `kind: idle_pay` with `gating: false`). `node status` exits 0 on Ctrl-C
-  (SIGINT, which some tools send to stop a command) with the node still blocked, so exit 0 alone proves nothing. A
-  last object with a gating entry, or without `data.blocking_reasons`, is not clear: re-run.
+  entry that blocks by the rule of [step 4](#4-diagnose): none with `gating: true`, and none whose `kind` is
+  `availability` or `last_error` (an entry without `kind` counts as idle pay). Exit 0 alone is not proof of clear:
+  on early builds of lium#294, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
+  with the node still blocked. A last object with a blocking entry, or without `data.blocking_reasons`, is not
+  clear: re-run.
+- **Exit 130** (`input.interrupted`): the run was stopped by Ctrl-C before the node was clear. It says nothing
+  about the node: re-run while the 1800 s budget lasts.
 - **Exit 10**: still blocked when this run's `--timeout` passed; the reasons are in `error.data`. Re-run while the
   1800 s budget lasts.
 - **Still blocked after 1800 s**: read the reasons again: the same one is still there (hand it over), or a new one
@@ -2695,10 +2714,10 @@ stderr: `[<namespaced code>] <message>`.
 | 5 | `node.not_found`, `portal.executor_not_found`, `auth.wallet_not_found`, `host.uuid_not_found`, any other `*_not_found` code or portal 404 | Something the command names does not exist | By code. `auth.wallet_not_found`: this machine has no wallet by those names; fix `LIUM_PROVIDER_COLDKEY` / `LIUM_PROVIDER_HOTKEY` (the wallet and hotkey **names**) or use another sign-in, then re-run once. `host.uuid_not_found`: the executor installer on the host did not report an executor id, so the host setup did not finish; read `error.message`, fix the host and re-run step 3. Any other: the node is not on this account; re-read the ids with `lium provider node listing --json`. |
 | 6 | `auth.not_signed_in`, `auth.*` (`auth.invalid`, `auth.expired`, `auth.forbidden`, `auth.hotkey_not_registered`; not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, `portal.overview_not_for_custodied_account`, a portal 401/403/419/440 | Not signed in, signed out, expired or not allowed | `auth.not_signed_in`: nothing is signed in, and every provider command that needs a sign-in answers it in agent mode. Follow `error.hint`: set `LIUM_PROVIDER_TOKEN`, run `portal login --email`, or set a hotkey ([step 1](#1-sign-in-pick-one)). If `error.data.session_email` is present, that e-mail session has ended: re-run `lium provider portal login --email <that address> --json`. Other codes: sign in again the same way (`lium provider portal login --force --json` for a hotkey) or use a token with the right scope. Do not loop. |
 | 7 | `portal.rate_limited` (a portal 429), `auth.refresh_race` | Rate limit, or another `lium provider` process is refreshing the token | Retry: after 60 s on a rate limit, after a few seconds on `auth.refresh_race`. |
-| 10 | `node.blocked.<code>` | The node has a gating blocking reason | Look up `<code>` in [Blocking reasons](#blocking-reasons), fix it, then watch the node as in [step 5](#5-fix-then-verify) (`node status --watch --until-clear`, whose exit 0 needs the last-object check there). |
+| 10 | `node.blocked.<code>` | The node has a gating blocking reason | Look up `<code>` in [Blocking reasons](#blocking-reasons), fix it, then watch the node as in [step 5](#5-fix-then-verify) (`node status --watch --until-clear`: exit 0 counts only with the last-object check there, and 130 is interrupted, not clear). |
 | 11 | `node.not_listed_yet` | Registered and waited for, not listed yet | Diagnose (step 4); nothing is lost, the node stays registered. |
 | 12 | `human.handoff_required`, `human.handoff_expired` | A person has to act | Relay `error.data.message_for_human` ([One-time human steps](#one-time-human-steps)), wait for the person, then re-run. A `--wait` that timed out is `human.handoff_required` with `error.data.waited_s`: the person has not finished; a re-run asks for a new code, so relay the new message. |
-| 130 | `input.interrupted` | Ctrl-C stopped the command | Nothing to fix; re-run it if the stop was not meant. The exception is `node status` (with or without `--watch`): Ctrl-C exits 0 there in every mode, so its exit 0 says nothing about the node until you read its last stdout object ([step 5](#5-fix-then-verify)). |
+| 130 | `input.interrupted` | Ctrl-C stopped the command | Nothing to fix; re-run it if the stop was not meant. From `node status --watch --until-clear` it means interrupted, not clear. `node status` may instead exit 0 on Ctrl-C (plain `--watch` in a terminal; every mode on lium 0.9.1 and early builds of lium#294), so its exit 0 says nothing about the node until you read its last stdout object ([step 5](#5-fix-then-verify)). |
 
 Only plain text mode (none of `--json`, `LIUM_OUTPUT=json`, `LIUM_NONINTERACTIVE=1`) keeps today's provider exit
 numbers, and only for the codes that have an old UPPER_CASE name: 1 argument (and no sign-in, and Ctrl-C), 2 auth,
@@ -2714,8 +2733,9 @@ The reason's own `requires` and `requires_unknown` decide ([stop rule](#5-fix-th
 shows what comes with each code. It names what the fix needs: `sudo` (root on the GPU host), `reboot` and
 `no_rentals` (both a hand-over); "none" is an empty list.
 "Verify" always ends with the watch of [step 5](#5-fix-then-verify): `lium provider node status "$NODE" --json --watch --until-clear --timeout 300`
-(`--until-clear`: lium#294, not released yet), re-run until clear or for 1800 s in total, and clear only when the last
-stdout object's `data.blocking_reasons` has no gating entry.
+(`--until-clear`: lium#294, not released yet), re-run until clear or for 1800 s in total, and clear only on exit 0
+with no blocking entry in the last stdout object's `data.blocking_reasons` (the [step 4](#4-diagnose) rule; an
+entry without `kind` counts as idle pay).
 
 **The validator's idle-pay reasons** (`kind: idle_pay`, the codes in `idle_pay_reasons`):
 
@@ -2866,10 +2886,8 @@ serves them *(coming with the next CLI release)*. Ask for the `read` scope only 
 > me when it is set. It expires in 30 days, and you can revoke it at any time with `lium provider token revoke`.
 
 After the person says it is set, check it without printing it: `lium provider portal whoami --json` answers
-`data.auth_method: "token"` (lium#295, not released yet). Never echo, print or log the token: no
-`echo $LIUM_PROVIDER_TOKEN`, no `env` or `printenv`, and never put it in a file, on a command line or in an answer.
-If the person pastes it into the chat anyway, do not use or repeat it: ask them to revoke it and set a new one in
-your environment.
+`data.auth_method: "token"` (lium#295, not released yet). The token rules of [step 1](#1-sign-in-pick-one) apply:
+never type, echo, print or log it, and if the person pastes it into the chat anyway, do not use or repeat it.
 
 If they cannot run `token create`: it needs a CLI session, and a Google-only account has no password for
 `portal login --email`, while an account created with Google has no hotkey of its own. Then there is no token for
@@ -2886,7 +2904,8 @@ Every fix the [stop rule](#5-fix-then-verify) names is a person's step: `require
 > of rentals | root access | new hardware | Lium support | a person's judgement>. Please do it, then tell me when the machine is back up.
 
 After the person answers, check the node with the watch of [step 5](#5-fix-then-verify) (re-run until clear or for
-1800 s in total; clear only when the last stdout object's `data.blocking_reasons` has no gating entry), and end your
+1800 s in total; clear only on exit 0 with no blocking entry in the last stdout object's `data.blocking_reasons`,
+by the [step 4](#4-diagnose) rule; exit 130 is interrupted, not clear), and end your
 answer with the pause line of step 5. Do not resume new rentals yourself.
 
 ```bash

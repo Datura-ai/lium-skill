@@ -5,11 +5,12 @@
 #      against the released CLI (subcommand exists, every --flag accepted; upcoming flags allow-listed in
 #      .cli-upcoming.txt with their PR);
 #   2. agents/install.sh installs THIS checkout (served locally) into a throwaway HOME for Claude Code, Cursor and Codex,
-#      and what it installed is byte-identical to the repo;
+#      and what it installed is byte-identical to the repo; a 404 for provider.md skips it with a warning (exit 0), and
+#      a 500 fails the install (exit 1) with an earlier install left untouched;
 #   3. the first command the skill tells an agent to run, `lium ls --format json`, answers from the public feed with
 #      the fields the skill names (the feed is public by design; the CLI only needs some key string set).
 # Needs: python3, the `lium` CLI on PATH (CI: `uv tool install lium.io`), network; step 3 uses GNU `timeout` when
-# present (coreutils; `gtimeout` from Homebrew on a Mac) and runs unbounded without it. Exit 0 only when all three pass.
+# present (coreutils; `gtimeout` from Homebrew on a Mac) and runs unbounded without it. Exit 0 only when every step passes.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 FAILED=""
@@ -35,6 +36,45 @@ install_sh() {
   rm -rf "$home"; return $rc
 }
 
+# Serves this checkout, but answers provider.md with the status in argv[2].
+SERVE_WITH_STATUS='
+import http.server, sys
+port, status = int(sys.argv[1]), int(sys.argv[2])
+class H(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        if self.path.endswith("/lium/references/provider.md"):
+            self.send_error(status)
+            return
+        super().do_GET()
+http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
+'
+
+install_sh_fetch_errors() {
+  local home port pid out code status skill rc=0
+  for status in 404 500; do
+    home=$(mktemp -d); port=$(( 20000 + RANDOM % 20000 ))
+    skill="$home/.claude/skills/lium/SKILL.md"
+    mkdir -p "$(dirname "$skill")"; echo "an earlier install" > "$skill"
+    python3 -c "$SERVE_WITH_STATUS" "$port" "$status" >/dev/null 2>&1 & pid=$!
+    sleep 1
+    out=$(HOME="$home" LIUM_SKILL_RAW_BASE="http://127.0.0.1:$port" bash agents/install.sh --claude-only --force 2>&1); code=$?
+    kill $pid; wait $pid 2>/dev/null
+    if [ "$status" = 404 ]; then
+      if [ $code -eq 0 ] && [[ "$out" == *"skipped lium/references/provider.md"* ]] && cmp -s lium/SKILL.md "$skill" \
+        && [ ! -e "$home/.claude/skills/lium/references/provider.md" ]; then
+        echo "install.sh: provider.md 404 → skipped with a warning, exit 0"
+      else echo "install.sh: provider.md 404 → exit $code, want 0 with the skip warning and SKILL.md installed"; rc=1; fi
+    else
+      if [ $code -eq 1 ] && [ "$(cat "$skill")" = "an earlier install" ] && [ -z "$(find "$home" -name '*.part')" ]; then
+        echo "install.sh: provider.md $status → exit 1, earlier install untouched"
+      else echo "install.sh: provider.md $status → exit $code, want 1 with the earlier SKILL.md kept and no .part left"; rc=1; fi
+    fi
+    rm -rf "$home"
+  done
+  return $rc
+}
+
 ls_json() {
   local home out t
   home=$(mktemp -d)
@@ -58,5 +98,6 @@ PY
 
 step check-commands check_commands
 step install-sh install_sh
+step install-sh-errors install_sh_fetch_errors
 step ls-json ls_json
 [ -z "$FAILED" ] && echo "skill e2e: PASS" || { echo "skill e2e: FAIL ($FAILED)"; exit 1; }
