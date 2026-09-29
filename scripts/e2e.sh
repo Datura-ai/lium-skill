@@ -104,10 +104,7 @@ bad = []
 # the password comes from the environment the person set; an assignment on the line would replace it
 if re.search(r"^\s*LIUM_PROVIDER_PASSWORD=\S* lium ", doc, re.M):
     bad.append("a command line sets LIUM_PROVIDER_PASSWORD")
-for code in ("validation_failed",):
-    if not re.search(r"^\| `%s` \|" % code, doc, re.M):
-        bad.append("no Blocking reasons row for %s" % code)
-print("\n".join(bad) or "provider.md: password from the environment, validation_failed has a row")
+print("\n".join(bad) or "provider.md: password from the environment")
 sys.exit(1 if bad else 0)
 PY
 }

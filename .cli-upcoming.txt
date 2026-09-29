@@ -3,7 +3,6 @@
 # subcommand the released CLI does not have yet. Keep this list short and dated; drop a block when its PR is released.
 # Provider journey (lium/references/provider.md), unreleased on lium 0.9.1 — drop each block when its PR is released.
 provider node get|--fail-on-blocked|lium#294
-provider node status|--fail-on-blocked|lium#294
 provider node status|--until-clear|lium#294
 provider node status|--timeout|lium#294
 provider node register-token|*|lium#295

@@ -160,8 +160,11 @@ token can only add a node to this account and watch its status. The portal's Add
 On the GPU host, with the token from step 2:
 
 ```bash
-lium mine --register "$REGISTER_TOKEN" --wait 45 --json  # --json: lium#295, not released yet
+lium mine --register "$REGISTER_TOKEN" --wait 4 --json  # --json: lium#295, not released yet
 ```
+
+Keep `--wait` (minutes) below your shell tool's own time limit (4 above; less if your tool stops commands sooner).
+A node that is not listed by then exits 11, and step 4 and the watch of step 5 take over from there.
 
 `--register` implies `--auto` (default ports: service 8080, SSH 2200). The CLI adds the node with the GPU model and
 count `nvidia-smi` reports, the host's public IPv4 and the model's base price, then polls until the node is listed
@@ -419,14 +422,14 @@ entry without `kind` counts as idle pay).
 | `outdated_executor_image` | The executor image is not the current release | none | Do what the reason's `fix` says (the validator's text): on a standard stack, check that `executor-executor-runner-1` and `executor-watchtower-1` are running (`docker ps`) so Watchtower redeploys the current image; if auto-update stopped, hand over with the `docs_url` (https://docs.lium.io/providers/nodes/gpu-power-cap#the-standard-stack-which-stopped-updating). |
 | `price_above_market_p90_soft_limit` | The price is above the market's soft limit | none | Ask the owner first, with the old price and `required` (the limit); once they agree, `lium provider node update-price "$NODE" --price <required> --json --yes`. |
 | `port_limited_remainder` | A partly rented node has too few free ports for its free GPUs | sudo | Open more ports on the host, or wait for the rental to end. |
-| `miner_default_job` | The node runs the owner's own default job | none | Stop that job on the host. |
+| `miner_default_job` | The node runs the owner's own default job | none | Ask the owner first: it is their job. Stop it on the host only once they agree. |
 | `provider_discord_not_connected` | No Discord linked: no idle pay, no subnet incentive | none (a human step) | [Discord linking](#discord-linking), then `lium provider config show --json` shows `data.discord_connected: true`. |
 | `new_rentals_paused` | New rentals are paused on this node (the owner's choice; not gating) | none | Only when the owner asks for it: `lium provider node resume "$NODE" --json --yes`. Never on your own, and never after a `no_rentals` pause ([step 5](#5-fix-then-verify)). |
 | `spot_tier` | Spot-tier nodes earn no subnet incentive (not gating) | none | Only if the owner wants it: [step 6](#6-list-on-secure-coming-with-the-next-cli-release). |
 | `banned_network_abuse` | The node is banned for network abuse | none (a human step) | Human step: the owner contacts Lium support. Do not retry. |
 | `gpu_model_not_eligible_for_unrented_incentive` | This GPU model is not in the idle-pay program (`gating: false`) | none | No action: the model earns from rentals only. |
 | `no_unrented_capacity_for_gpu_count` | No idle-pay room for this node size this cycle (`gating: false`) | none | No action: rentals still pay, and room opens as the market moves. |
-| `validation_failed` | The node's last validator check failed | the reason's own `requires` | Read the failed check's reason and fix in `lium provider node status "$NODE" --json` (`data.fix`), apply the [stop rule](#5-fix-then-verify) before any fix, then verify with the watch. |
+| `validation_failed` | The node's last validator check failed | the reason's own `requires` | Take the fix from this reason in `lium provider node get "$NODE" --json` (`fix`, `fix_command`); `lium provider node status "$NODE" --json` shows the failed run. Apply the [stop rule](#5-fix-then-verify) before any fix, then verify with the watch. |
 
 **Reachability** (`kind: availability`, the listing's `hidden_reasons`) always blocks renting. Built by the CLI,
 these come with `requires_unknown: true`: hand the fix over. Fix one yourself only when the portal serves the reason
