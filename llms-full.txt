@@ -2432,7 +2432,8 @@ The account decides the path. A person who signs in to the portal with Google ha
 # a) hotkey in a wallet on this machine
 LIUM_PROVIDER_COLDKEY=my-wallet LIUM_PROVIDER_HOTKEY=my-hotkey lium provider portal login --json
 # b) e-mail and password
-LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email owner@example.com --json  # lium#295, not released yet
+# the person sets LIUM_PROVIDER_PASSWORD in your environment or secret settings; never put it on the line
+lium provider portal login --email owner@example.com --json  # lium#295, not released yet
 # c) an API token: nothing to run; the person sets LIUM_PROVIDER_TOKEN in your environment or secret settings
 # check any of them
 lium provider portal whoami --json  # with a token or an e-mail session: lium#295, not released yet
@@ -2756,6 +2757,7 @@ entry without `kind` counts as idle pay).
 | `banned_network_abuse` | The node is banned for network abuse | none (a human step) | Human step: the owner contacts Lium support. Do not retry. |
 | `gpu_model_not_eligible_for_unrented_incentive` | This GPU model is not in the idle-pay program (`gating: false`) | none | No action: the model earns from rentals only. |
 | `no_unrented_capacity_for_gpu_count` | No idle-pay room for this node size this cycle (`gating: false`) | none | No action: rentals still pay, and room opens as the market moves. |
+| `validation_failed` | The node's last validator check failed | the reason's own `requires` | Read the failed check's reason and fix in `lium provider node status "$NODE" --json` (`data.fix`), apply the [stop rule](#5-fix-then-verify) before any fix, then verify with the watch. |
 
 **Reachability** (`kind: availability`, the listing's `hidden_reasons`) always blocks renting. Built by the CLI,
 these come with `requires_unknown: true`: hand the fix over. Fix one yourself only when the portal serves the reason
@@ -2863,7 +2865,7 @@ lium provider portal confirm-email --json --wait --timeout 900  # lium#295, not 
 After, sign in again:
 
 ```bash
-LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email <email> --json  # lium#295, not released yet
+lium provider portal login --email <email> --json  # lium#295, not released yet
 ```
 
 ### Google-only account
@@ -2871,13 +2873,17 @@ LIUM_PROVIDER_PASSWORD="$PW" lium provider portal login --email <email> --json  
 An account that signs in only with Google has no password, and an agent does not sign in with Google. Relay:
 
 > Your Lium provider account signs in with Google, which I cannot do for you. Please sign in at
-> https://provider.lium.io, open Add Node, and send me the install command it shows (it starts with `curl -fsSL`
-> and contains `--register`; it works for one hour).
+> https://provider.lium.io, open Add Node, and run the install command it shows on the GPU host yourself (it starts
+> with `curl -fsSL` and contains `--register`; it works for one hour). If I should run it, set only its token as
+> `REGISTER_TOKEN` in my environment or secret settings. Do not paste the command or the token into this chat: anyone
+> who reads it can add a node to your account. Tell me when you are done.
 
-After, run that line on the GPU host, or pass its token to `lium mine --register "$REGISTER_TOKEN" --json`, and
-continue at step 3. For the later steps (diagnose, tier, earnings) ask for an API token instead, once the portal
+After, continue at step 3: with `REGISTER_TOKEN` set, run `lium mine --register "$REGISTER_TOKEN" --json` on the GPU
+host; if the person ran the command, go straight to the check there. Never type, echo, print or log the token, and
+if the person pastes it into the chat anyway, do not use or repeat it; ask for a new one. For the later steps (diagnose, tier, earnings) ask for an API token instead, once the portal
 serves them *(coming with the next CLI release)*. Ask for the `read` scope only (diagnose and earnings), plus
-`node` and `tier` only when the owner wants you to change their nodes (price, pause, GPU minimum, tier). Relay:
+`node` and `tier` only when the owner wants you to change their nodes (price, pause, GPU minimum, tier). Relay it as
+written, but leave out the `<!-- … -->` notes (they are for this page's checks, not for the owner):
 
 > Please create a Lium provider API token for me on a machine where you are signed in to the Lium provider CLI:
 > `lium provider token create --name my-agent --scope read --expires-days 30 --json --yes` (add <!-- lium#295, not released yet -->
