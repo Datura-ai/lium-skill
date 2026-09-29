@@ -2411,7 +2411,7 @@ at the start of stderr (`[auth.not_signed_in] not signed in to the provider port
 (the persona gate, or any command that changes something) never reads stdin: it fails with
 `input.confirmation_required` (exit 2), and `--yes` or `LIUM_PROVIDER_ACK=1` is the way through. Ctrl-C is
 `input.interrupted` (exit 130). `node status` is the one command where Ctrl-C can still exit 0: always with plain
-`--watch` in a terminal, and in every mode on lium 0.9.1 and early builds of lium#294. So an exit 0 from
+`--watch` in a terminal, and in every mode on a CLI that has no `input.interrupted` (lium 0.9.1 among them). So an exit 0 from
 `node status` is never proof on its own: see [step 5](#5-fix-then-verify). Plain text mode (none of the three) behaves
 exactly as the released CLI: the prompt reads stdin, a piped `y` confirms, a decline or Ctrl-C exits 1, and errors
 keep the old exit numbers. Always run in agent mode, and pass `--yes` on each command that changes something, one
@@ -2465,8 +2465,17 @@ these exceptions *(coming with the next CLI release)*:
 A token lets later runs work without the wallet or the password *(coming with the next CLI release; until the
 portal serves API tokens it answers `portal.not_supported`, exit 3)*. Do not run `token create` yourself: it prints
 the secret once, in its output, and your tool output would then hold it. The person mints it in a shell of their own
-and sets it in your environment: relay the API-token message in [Google-only account](#google-only-account). Then
-check it with `lium provider portal whoami --json` (`data.auth_method: "token"`). Listing and revoking show no secret:
+and sets it in your environment. For a hotkey or e-mail owner, relay this, and leave out the `--scope register` line
+when you only diagnose (step 2 needs `register` to add nodes):
+
+> Please create a Lium provider API token for me in your own shell, where you are signed in to the Lium provider CLI:
+> `lium provider token create --name my-agent --scope read --scope register --expires-days 30 --json --yes`
+> (add `--scope node --scope tier` only if you want me to change your nodes' price, pause state, GPU minimum or
+> tier). Do not paste the token into this chat: set it yourself as `LIUM_PROVIDER_TOKEN` in my environment or secret
+> settings, then tell me when it is set. You can revoke it at any time with `lium provider token revoke`.
+
+A Google-only owner gets the message in [Google-only account](#google-only-account). Then check the token with
+`lium provider portal whoami --json` (`data.auth_method: "token"`). Listing and revoking show no secret:
 
 ```bash
 lium provider token list --json  # lium#295, not released yet
@@ -2537,6 +2546,8 @@ lium provider node status "$NODE" --json
 `node get` puts every reason the node is kept off the listing or out of idle pay in `data.blocking_reasons`
 *(coming with the next CLI release)*. With `--fail-on-blocked` a blocked node is one envelope:
 `{"ok": false, "error": {"code": "node.blocked.<first reason's code>", "exit_code": 10, "data": <the node>}}`.
+An exit 10 whose code has no reason code after `node.blocked` (or whose reason has no `code`) is still blocked: take
+the reasons from `error.data.blocking_reasons` and hand over each one that blocks, with its `message` and `fix`.
 A reason has `code`, `gating`, `message`, `measured`, `required`, `fix`, `fix_command`, `verify_command`,
 `requires` and `docs_url`, and `kind` when the portal serves it (the CLI's fallback entries below may have no
 `kind`). What to do per code is in [Blocking reasons](#blocking-reasons).
@@ -2567,9 +2578,10 @@ For each reason that blocks by the rule of [step 4](#4-diagnose) (`gating: true`
 - the fix needs `sudo` on a host you cannot `sudo` on.
 
 The one exception: a fix that is only a `lium provider` command (`node min-gpu set`, `node update-price`) changes
-nothing on the host and is yours to run. A price is the owner's revenue, though: before `node update-price`, ask the
-owner with the old price per GPU (from `node get "$NODE" --json`) and the new one, and run it only once they agree.
-If you cannot ask, leave the price and report the reason, the old price and the price that clears it.
+nothing on the host. Both are still the owner's decision: a price is their revenue, and a GPU minimum decides which
+rentals the node can take. Before either, ask the owner with the old and the new value (from `node get "$NODE"
+--json`: the price per GPU, or the minimum GPU count), and run it only once they agree. If you cannot ask, leave it
+and report the reason, the old value and the value that clears it.
 
 Never reboot, never restart the Docker daemon (`systemctl restart docker` or the like), and never install or upgrade
 a driver, on your own, whatever `fix` says: each of them can end the rentals on the node.
@@ -2604,7 +2616,7 @@ lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
 If `pause` refuses the node as not rented (exit 3, `portal.node_not_rented`, or `portal.request_rejected` with an
 `error.message` saying the node must be rented), the rental ended between the two calls: the node is free.
 
-**Never resume new rentals yourself** in this flow, not even after your own `pause`. The portal answers a `pause` the
+<a id="never-resume"></a>**Never resume new rentals yourself** in this flow, not even after your own `pause`. The portal answers a `pause` the
 same way whether that call paused the node or the owner had paused it a moment before, so the agent cannot prove the
 pause is its own, and resuming could undo the owner's pause. The person resumes (the pause line below says how).
 
@@ -2653,7 +2665,7 @@ sooner), and re-run the command until the node is clear or 1800 s have passed in
 - **Clear** only when the command exits 0 **and** the last JSON object on stdout has `data.blocking_reasons` with no
   entry that blocks by the rule of [step 4](#4-diagnose): none with `gating: true`, and none with a `kind` other
   than `idle_pay` (an entry without `kind` counts as idle pay). Exit 0 alone is not proof of clear:
-  on early builds of lium#294, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
+  on a CLI without `input.interrupted`, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
   with the node still blocked. A last object with a blocking entry, or without `data.blocking_reasons`, is not
   clear: re-run.
 - **Exit 130** (`input.interrupted`): the run was stopped by Ctrl-C before the node was clear. It says nothing
@@ -2692,9 +2704,10 @@ Other node changes:
   price ([step 5](#5-fix-then-verify));
 - `lium provider node pause "$NODE" --json --yes`: refuses an idle node (exit 3, `portal.node_not_rented`, or
   `portal.request_rejected` saying the node must be rented);
-- `lium provider node resume "$NODE" --json --yes`: only when the owner asks for it, and never after a `no_rentals`
-  pause ([step 5](#5-fix-then-verify));
-- `lium provider node min-gpu set "$NODE" 4 --json --yes`.
+- `lium provider node resume "$NODE" --json --yes`: only when the owner asks for it
+  ([never resume](#never-resume) in step 5);
+- `lium provider node min-gpu set "$NODE" 4 --json --yes`: only once the owner has agreed to the new minimum
+  ([step 5](#5-fix-then-verify)).
 
 ### 7. Earnings and idle pay *(coming with the next CLI release)*
 
@@ -2729,12 +2742,12 @@ stderr: `[<namespaced code>] <message>`.
 | 3 | `portal.<detail.code>`, `portal.not_supported` | The portal refused or failed the call | `portal.not_supported` on `config connect-discord` or `portal confirm-email` (with `data.legacy_flow: true`): follow the old flow in [One-time human steps](#one-time-human-steps); do not stop there. On any other command the portal does not serve this route yet: stop using that command. Other codes: act on `error.message`/`error.data`; a 5xx may be retried up to 3 times with backoff. |
 | 4 | `net.unreachable`, `ssh.*` | Nothing answered | Check the network and `--portal-url`; retry with backoff (30 s, 60 s, 120 s). |
 | 5 | `node.not_found`, `portal.executor_not_found`, `auth.wallet_not_found`, `host.uuid_not_found`, any other `*_not_found` code or portal 404 | Something the command names does not exist | By code. `auth.wallet_not_found`: this machine has no wallet by those names; fix `LIUM_PROVIDER_COLDKEY` / `LIUM_PROVIDER_HOTKEY` (the wallet and hotkey **names**) or use another sign-in, then re-run once. `host.uuid_not_found`: the executor installer on the host did not report an executor id, so the host setup did not finish; read `error.message`, fix the host and re-run step 3. Any other: the node is not on this account; re-read the ids with `lium provider node listing --json`. |
-| 6 | `auth.not_signed_in`, `auth.*` (`auth.invalid`, `auth.expired`, `auth.forbidden`, `auth.hotkey_not_registered`; not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, `portal.overview_not_for_custodied_account`, a portal 401/403/419/440 | Not signed in, signed out, expired or not allowed | `auth.not_signed_in`: nothing is signed in, and every provider command that needs a sign-in answers it in agent mode. Follow `error.hint`: set `LIUM_PROVIDER_TOKEN`, run `portal login --email`, or set a hotkey ([step 1](#1-sign-in-pick-one)). If `error.data.session_email` is present, that e-mail session has ended: re-run `lium provider portal login --email <that address> --json`. Other codes: sign in again the same way (`lium provider portal login --force --json` for a hotkey) or use a token with the right scope. Do not loop. |
+| 6 | `auth.not_signed_in`, `auth.*` (`auth.invalid`, `auth.expired`, `auth.forbidden`, `auth.hotkey_not_registered`; not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, `portal.overview_not_for_custodied_account`, a portal 401/403/419/440 | Not signed in, signed out, expired or not allowed | `portal.overview_not_for_custodied_account`: `idle-pay` on an account created with e-mail or Google, whose overview the portal serves only to hotkey accounts. Signing in again does not help: ask the person to read idle pay on the portal's Overview page. `auth.not_signed_in`: nothing is signed in, and every provider command that needs a sign-in answers it in agent mode. Follow `error.hint`: set `LIUM_PROVIDER_TOKEN`, run `portal login --email`, or set a hotkey ([step 1](#1-sign-in-pick-one)). If `error.data.session_email` is present, that e-mail session has ended: re-run `lium provider portal login --email <that address> --json`. Other codes: sign in again the same way (`lium provider portal login --force --json` for a hotkey) or use a token with the right scope. Do not loop. |
 | 7 | `portal.rate_limited` (a portal 429), `auth.refresh_race` | Rate limit, or another `lium provider` process is refreshing the token | Retry: after 60 s on a rate limit, after a few seconds on `auth.refresh_race`. |
-| 10 | `node.blocked.<code>` | The node has a reason that blocks by the [step 4](#4-diagnose) rule | Look up `<code>` in [Blocking reasons](#blocking-reasons), fix it, then watch the node as in [step 5](#5-fix-then-verify) (`node status --watch --until-clear`: exit 0 counts only with the last-object check there, and 130 is interrupted, not clear). |
+| 10 | `node.blocked.<code>`, `node.blocked` | The node has a reason that blocks by the [step 4](#4-diagnose) rule | Take each reason in `error.data.blocking_reasons` that blocks by that rule, look up its `code` in [Blocking reasons](#blocking-reasons) and fix it or hand it over by [step 5](#5-fix-then-verify); a reason with no `code` is a hand-over with its `message` and `fix`. Then watch the node as in step 5. |
 | 11 | `node.not_listed_yet` | Registered and waited for, not listed yet | Diagnose (step 4); nothing is lost, the node stays registered. |
 | 12 | `human.handoff_required`, `human.handoff_expired` | A person has to act | Relay `error.data.message_for_human` ([One-time human steps](#one-time-human-steps)), wait for the person, then re-run. A `--wait` that timed out is `human.handoff_required` with `error.data.waited_s`: the person has not finished; a re-run asks for a new code, so relay the new message. |
-| 130 | `input.interrupted` | Ctrl-C stopped the command | Nothing to fix; re-run it if the stop was not meant. From `node status --watch --until-clear` it means interrupted, not clear. `node status` may instead exit 0 on Ctrl-C (plain `--watch` in a terminal; every mode on lium 0.9.1 and early builds of lium#294), so its exit 0 says nothing about the node until you read its last stdout object ([step 5](#5-fix-then-verify)). |
+| 130 | `input.interrupted` | Ctrl-C stopped the command | Nothing to fix; re-run it if the stop was not meant. From `node status --watch --until-clear` it means interrupted, not clear. `node status` may instead exit 0 on Ctrl-C (plain `--watch` in a terminal; every mode on a CLI without `input.interrupted`), so its exit 0 says nothing about the node until you read its last stdout object ([step 5](#5-fix-then-verify)). |
 
 Only plain text mode (none of `--json`, `LIUM_OUTPUT=json`, `LIUM_NONINTERACTIVE=1`) keeps today's provider exit
 numbers, and only for the codes that have an old UPPER_CASE name: 1 argument (and no sign-in, and Ctrl-C), 2 auth,
@@ -2749,10 +2762,7 @@ has no agent mode and exits by its old numbers in every mode. The CLI's
 The reason's own `requires` and `requires_unknown` decide ([stop rule](#5-fix-then-verify)); the `requires` column
 shows what comes with each code. It names what the fix needs: `sudo` (root on the GPU host), `reboot` and
 `no_rentals` (both a hand-over); "none" is an empty list.
-"Verify" always ends with the watch of [step 5](#5-fix-then-verify): `lium provider node status "$NODE" --json --watch --until-clear --timeout 300` (`--until-clear`: lium#294, not released yet),
-re-run until clear or for 1800 s in total, and clear only on exit 0
-with no blocking entry in the last stdout object's `data.blocking_reasons` (the [step 4](#4-diagnose) rule; an
-entry without `kind` counts as idle pay).
+"Verify" always ends with the watch of [step 5](#5-fix-then-verify), with its rule for when the node is clear.
 
 **The validator's idle-pay reasons** (`kind: idle_pay`, the codes in `idle_pay_reasons`):
 
@@ -2761,14 +2771,14 @@ entry without `kind` counts as idle pay).
 | `nvidia_driver_below_minimum` | The NVIDIA driver is older than the network minimum (580.65.06 today) | sudo, reboot, no_rentals | Hand over: upgrade the driver, reboot, restart the executor (`docker compose up -d` in `neurons/executor`). |
 | `sysbox_not_enabled` | The executor does not run the sysbox runtime | sudo, no_rentals | Hand over: install and enable sysbox, restart the executor. |
 | `insufficient_disk_for_vram` | Total disk is below the required share of GPU VRAM (`measured` vs `required`, in GB) | sudo, no_rentals | Hand over: give the host at least `required` GB of disk. |
-| `flagship_without_ncu_or_split` | An idle 8x flagship offers no NCU profiling, GPU splitting or confidential computing | sudo, reboot, no_rentals | Yours, no reboot: `lium provider node min-gpu set "$NODE" <n> --json --yes` with `n` below the full node. Otherwise hand over: open the profiling counters (`NVreg_RestrictProfilingToAdminUsers=0`, then reboot), or run in a confidential VM. |
+| `flagship_without_ncu_or_split` | An idle 8x flagship offers no NCU profiling, GPU splitting or confidential computing | sudo, reboot, no_rentals | No reboot: ask the owner first, then `lium provider node min-gpu set "$NODE" <n> --json --yes` with `n` below the full node. Otherwise hand over: open the profiling counters (`NVreg_RestrictProfilingToAdminUsers=0`, then reboot), or run in a confidential VM. |
 | `cannot_apply_gpu_power_cap` | The executor container cannot run `nvidia-smi -pl` | none; sudo, no_rentals when the node container runs under sysbox | `docker compose pull && docker compose up -d` in `neurons/executor`; a custom compose needs `privileged: true`. |
 | `outdated_executor_image` | The executor image is not the current release | none | On a standard stack, check that `executor-executor-runner-1` and `executor-watchtower-1` are running (`docker ps`) so Watchtower redeploys the current image; if auto-update stopped, hand over with the `docs_url` (https://docs.lium.io/providers/nodes/gpu-power-cap#the-standard-stack-which-stopped-updating). |
 | `price_above_market_p90_soft_limit` | The price is above the market's soft limit | none | Ask the owner first, with the old price and `required` (the limit); once they agree, `lium provider node update-price "$NODE" --price <required> --json --yes`. |
 | `port_limited_remainder` | A partly rented node has too few free ports for its free GPUs | sudo | Open more ports on the host, or wait for the rental to end. |
 | `miner_default_job` | The node runs the owner's own default job | none | Ask the owner first: it is their job. Stop it on the host only once they agree. |
 | `provider_discord_not_connected` | No Discord linked: no idle pay, no subnet incentive | none (a human step) | [Discord linking](#discord-linking), then `lium provider config show --json` shows `data.discord_connected: true`. |
-| `new_rentals_paused` | New rentals are paused on this node (the owner's choice; not gating) | none | Only when the owner asks for it: `lium provider node resume "$NODE" --json --yes`. Never on your own, and never after a `no_rentals` pause ([step 5](#5-fix-then-verify)). |
+| `new_rentals_paused` | New rentals are paused on this node (the owner's choice; not gating) | none | Only when the owner asks for it: `lium provider node resume "$NODE" --json --yes` ([never resume](#never-resume)). |
 | `spot_tier` | Spot-tier nodes earn no subnet incentive (not gating) | none | Only if the owner wants it: [step 6](#6-list-on-secure-coming-with-the-next-cli-release). |
 | `banned_network_abuse` | The node is banned for network abuse | none (a human step) | Human step: the owner contacts Lium support. Do not retry. |
 | `gpu_model_not_eligible_for_unrented_incentive` | This GPU model is not in the idle-pay program (`gating: false`) | none | No action: the model earns from rentals only. |
@@ -2925,10 +2935,8 @@ Every fix the [stop rule](#5-fix-then-verify) names is a person's step: `require
 > Node <node_id> on <host> needs you for one step: <fix>. I stopped here because it needs <a reboot | an interruption
 > of rentals | root access | new hardware | Lium support | a person's judgement>. Please do it, then tell me when the machine is back up.
 
-After the person answers, check the node with the watch of [step 5](#5-fix-then-verify) (re-run until clear or for
-1800 s in total; clear only on exit 0 with no blocking entry in the last stdout object's `data.blocking_reasons`,
-by the [step 4](#4-diagnose) rule; exit 130 is interrupted, not clear), and end your
-answer with the pause line of step 5. Do not resume new rentals yourself.
+After the person answers, check the node with the watch of [step 5](#5-fix-then-verify) and its clear rule, and
+end your answer with the pause line of step 5 ([never resume](#never-resume)).
 
 ```bash
 lium provider node status "$NODE" --json --watch --until-clear --timeout 300  # lium#294, not released yet

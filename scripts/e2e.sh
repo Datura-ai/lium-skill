@@ -6,7 +6,8 @@
 #      .cli-upcoming.txt with their PR);
 #   2. agents/install.sh installs THIS checkout (served locally) into a throwaway HOME for Claude Code, Cursor and Codex,
 #      and what it installed is byte-identical to the repo; a 404 for provider.md skips it with a warning (exit 0), and
-#      a 500 fails the install (exit 1) with an earlier install left untouched;
+#      a 500, a body cut short or a 404 for SKILL.md fails the install (exit 1) with an earlier install left
+#      untouched; without --force an earlier SKILL.md is kept as SKILL.md.bak;
 #   3. the first command the skill tells an agent to run, `lium ls --format json`, answers from the public feed with
 #      the fields the skill names (the feed is public by design; the CLI only needs some key string set).
 # Needs: python3, the `lium` CLI on PATH (CI: `uv tool install lium.io`), network; step 3 uses GNU `timeout` when
@@ -36,42 +37,57 @@ install_sh() {
   rm -rf "$home"; return $rc
 }
 
-# Serves this checkout, but answers provider.md with the status in argv[2].
-SERVE_WITH_STATUS='
+# Serves this checkout, but answers the file argv[2] with argv[3]: an HTTP status, or `drop` (a body cut short).
+SERVE_WITH_FAULT='
 import http.server, sys
-port, status = int(sys.argv[1]), int(sys.argv[2])
+port, path, fault = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
-        if self.path.endswith("/lium/references/provider.md"):
-            self.send_error(status)
-            return
-        super().do_GET()
+        if not self.path.endswith("/" + path) or fault == "none":
+            return super().do_GET()
+        if fault != "drop":
+            return self.send_error(int(fault))
+        self.send_response(200); self.send_header("Content-Length", "100000"); self.end_headers()
+        self.wfile.write(b"# cut short"); self.wfile.flush(); self.connection.close()
 http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
 '
 
+# Each case: the file, its fault, the install flags. provider.md 404 is skipped (exit 0); any other fault fails the
+# install (exit 1) with the earlier SKILL.md kept and no .part left; with no fault and no --force the earlier
+# SKILL.md is kept as SKILL.md.bak.
 install_sh_fetch_errors() {
-  local home port pid out code status skill rc=0
-  for status in 404 500; do
+  local home port pid out code skill rc=0 file fault flags
+  while read -r file fault flags; do
     home=$(mktemp -d); port=$(( 20000 + RANDOM % 20000 ))
     skill="$home/.claude/skills/lium/SKILL.md"
     mkdir -p "$(dirname "$skill")"; echo "an earlier install" > "$skill"
-    python3 -c "$SERVE_WITH_STATUS" "$port" "$status" >/dev/null 2>&1 & pid=$!
+    python3 -c "$SERVE_WITH_FAULT" "$port" "$file" "$fault" >/dev/null 2>&1 & pid=$!
     sleep 1
-    out=$(HOME="$home" LIUM_SKILL_RAW_BASE="http://127.0.0.1:$port" bash agents/install.sh --claude-only --force 2>&1); code=$?
+    # shellcheck disable=SC2086
+    out=$(HOME="$home" LIUM_SKILL_RAW_BASE="http://127.0.0.1:$port" bash agents/install.sh --claude-only $flags 2>&1); code=$?
     kill $pid; wait $pid 2>/dev/null
-    if [ "$status" = 404 ]; then
+    local case="install.sh: $file $fault ${flags:-(no --force)}"
+    if [ "$fault" = none ]; then
+      if [ $code -eq 0 ] && cmp -s lium/SKILL.md "$skill" && [ "$(cat "$skill.bak")" = "an earlier install" ]; then
+        echo "$case → exit 0, earlier SKILL.md kept as SKILL.md.bak"
+      else echo "$case → exit $code, want 0 with SKILL.md.bak holding the earlier install"; rc=1; fi
+    elif [ "$fault" = 404 ] && [ "$file" = lium/references/provider.md ]; then
       if [ $code -eq 0 ] && [[ "$out" == *"skipped lium/references/provider.md"* ]] && cmp -s lium/SKILL.md "$skill" \
         && [ ! -e "$home/.claude/skills/lium/references/provider.md" ]; then
-        echo "install.sh: provider.md 404 → skipped with a warning, exit 0"
-      else echo "install.sh: provider.md 404 → exit $code, want 0 with the skip warning and SKILL.md installed"; rc=1; fi
-    else
-      if [ $code -eq 1 ] && [ "$(cat "$skill")" = "an earlier install" ] && [ -z "$(find "$home" -name '*.part')" ]; then
-        echo "install.sh: provider.md $status → exit 1, earlier install untouched"
-      else echo "install.sh: provider.md $status → exit $code, want 1 with the earlier SKILL.md kept and no .part left"; rc=1; fi
-    fi
+        echo "$case → skipped with a warning, exit 0"
+      else echo "$case → exit $code, want 0 with the skip warning and SKILL.md installed"; rc=1; fi
+    elif [ $code -eq 1 ] && [ "$(cat "$skill")" = "an earlier install" ] && [ -z "$(find "$home" -name '*.part')" ]; then
+      echo "$case → exit 1, earlier install untouched"
+    else echo "$case → exit $code, want 1 with the earlier SKILL.md kept and no .part left"; rc=1; fi
     rm -rf "$home"
-  done
+  done <<'CASES'
+lium/references/provider.md 404 --force
+lium/references/provider.md 500 --force
+lium/references/provider.md drop --force
+lium/SKILL.md 404 --force
+lium/SKILL.md none
+CASES
   return $rc
 }
 

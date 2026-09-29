@@ -69,6 +69,12 @@ FILES=(
 # the directories installed before it keep the new version, and the failure names them.
 OPTIONAL_FILES=" lium/references/provider.md "
 updated_dirs=""
+# Every *.part this run creates; on any exit (a failure, Ctrl-C, a kill) the ones still there are removed.
+part_files=()
+remove_parts() { local p; for p in ${part_files[@]+"${part_files[@]}"}; do rm -f "$p"; done; }
+trap remove_parts EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 install_into() {
   local target_root="$1" label="$2"
@@ -84,6 +90,7 @@ install_into() {
     mkdir -p "$(dirname "$out")"
 
     local rc=0 http_code
+    part_files+=("$out.part")
     http_code=$(curl -fsSL -w '%{http_code}' "$url" -o "$out.part") || rc=$?
     if [[ $rc -ne 0 ]]; then
       rm -f "$out.part"
@@ -91,7 +98,6 @@ install_into() {
         warn "skipped $rel: not at ref $LIUM_SKILL_VERSION"
         continue
       fi
-      for out in ${staged[@]+"${staged[@]}"}; do rm -f "$out.part"; done
       [[ -z "$updated_dirs" ]] || warn "already updated to $LIUM_SKILL_VERSION:$updated_dirs; $dest is unchanged"
       fail "failed to download $url (curl exit $rc, HTTP ${http_code:-none})"
     fi
