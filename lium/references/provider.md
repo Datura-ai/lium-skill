@@ -163,8 +163,11 @@ On the GPU host, with the token from step 2:
 lium mine --register "$REGISTER_TOKEN" --wait 4 --json  # --json: lium#295, not released yet
 ```
 
-Keep `--wait` (minutes) below your shell tool's own time limit (4 above; less if your tool stops commands sooner).
-A node that is not listed by then exits 11, and step 4 and the watch of step 5 take over from there.
+Host setup runs before the `--wait` polling starts and can take a few minutes, so keep setup **plus** `--wait`
+below your shell tool's own time limit: with two minutes of setup and a five-minute limit, `--wait 2`, not 4. A
+node that is not listed by then exits 11, and step 4 and the watch of step 5 take over from there. If the tool
+stops the command before it prints a result, re-run the same command (a node that is already registered is not
+added twice) or go to step 4.
 
 `--register` implies `--auto` (default ports: service 8080, SSH 2200). The CLI adds the node with the GPU model and
 count `nvidia-smi` reports, the host's public IPv4 and the model's base price, then polls until the node is listed
@@ -212,7 +215,8 @@ A reason has `code`, `gating`, `message`, `measured`, `required`, `fix`, `fix_co
 `kind`). What to do per code is in [Blocking reasons](#blocking-reasons).
 
 Read `gating` from the reason; keep no list of your own. A reason **blocks** when it has `gating: true`, or when
-its `kind` is `availability` or `last_error` (those block renting whatever their `gating`). A reason without `kind`
+it has a `kind` other than `idle_pay` (such as `availability` or `last_error`; those block renting whatever their
+`gating`). A reason without `kind`
 counts as `idle_pay`, as the CLI reads it, and a reason without `gating` blocks unless the
 [table](#blocking-reasons) marks its code `gating: false`. An `idle_pay` reason with `gating: false` blocks nothing:
 the node only earns no idle pay, and no action is needed. Until the portal serves the list, the CLI builds it from
@@ -316,8 +320,8 @@ clear. Give `--timeout` a value below your shell tool's own time limit (300 s ab
 sooner), and re-run the command until the node is clear or 1800 s have passed in total. After each run:
 
 - **Clear** only when the command exits 0 **and** the last JSON object on stdout has `data.blocking_reasons` with no
-  entry that blocks by the rule of [step 4](#4-diagnose): none with `gating: true`, and none whose `kind` is
-  `availability` or `last_error` (an entry without `kind` counts as idle pay). Exit 0 alone is not proof of clear:
+  entry that blocks by the rule of [step 4](#4-diagnose): none with `gating: true`, and none with a `kind` other
+  than `idle_pay` (an entry without `kind` counts as idle pay). Exit 0 alone is not proof of clear:
   on early builds of lium#294, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
   with the node still blocked. A last object with a blocking entry, or without `data.blocking_reasons`, is not
   clear: re-run.
@@ -548,14 +552,15 @@ An account that signs in only with Google has no password, and an agent does not
 > https://provider.lium.io, open Add Node, and run the install command it shows on the GPU host yourself (it starts
 > with `curl -fsSL` and contains `--register`; it works for one hour). If I should run it, set only its token as
 > `REGISTER_TOKEN` in my environment or secret settings. Do not paste the command or the token into this chat: anyone
-> who reads it can add a node to your account. Tell me when you are done.
+> who reads it can add a node to your account. When it finishes, tell me the node ID it printed and whether it
+> succeeded. The node ID is not secret.
 
 After, continue at step 3: with `REGISTER_TOKEN` set, run `lium mine --register "$REGISTER_TOKEN" --json` on the GPU
 host; if the person ran the command, go straight to the check there. Never type, echo, print or log the token, and
 if the person pastes it into the chat anyway, do not use or repeat it; ask for a new one. For the later steps (diagnose, tier, earnings) ask for an API token instead, once the portal
 serves them *(coming with the next CLI release)*. Ask for the `read` scope only (diagnose and earnings), plus
 `node` and `tier` only when the owner wants you to change their nodes (price, pause, GPU minimum, tier). Relay it as
-written, but leave out the `<!-- … -->` notes (they are for this page's checks, not for the owner):
+written, but omit the inline HTML comments when relaying the message:
 
 > Please create a Lium provider API token for me on a machine where you are signed in to the Lium provider CLI:
 > `lium provider token create --name my-agent --scope read --expires-days 30 --json --yes` (add <!-- lium#295, not released yet -->
