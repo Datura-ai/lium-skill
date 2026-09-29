@@ -65,8 +65,10 @@ FILES=(
   "lium/references/provider.md"
 )
 # Added after the first refs: a LIUM_SKILL_VERSION pinned before them has no such file, so a 404 skips it. Any other
-# failure (network error, 5xx) fails the install (exit 1) before any installed file is replaced.
+# failure (network error, 5xx) fails the install (exit 1) before any file in that agent's directory is replaced;
+# the directories installed before it keep the new version, and the failure names them.
 OPTIONAL_FILES=" lium/references/provider.md "
+updated_dirs=""
 
 install_into() {
   local target_root="$1" label="$2"
@@ -90,6 +92,7 @@ install_into() {
         continue
       fi
       for out in ${staged[@]+"${staged[@]}"}; do rm -f "$out.part"; done
+      [[ -z "$updated_dirs" ]] || warn "already updated to $LIUM_SKILL_VERSION:$updated_dirs; $dest is unchanged"
       fail "failed to download $url (curl exit $rc, HTTP ${http_code:-none})"
     fi
     staged+=("$out")
@@ -101,6 +104,7 @@ install_into() {
     fi
     mv "$out.part" "$out"
   done
+  updated_dirs+=" $dest"
   ok "Installed $label skill ($(wc -l < "$dest/SKILL.md" | tr -d ' ') lines in SKILL.md)"
 }
 

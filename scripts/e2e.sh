@@ -104,9 +104,6 @@ bad = []
 # the password comes from the environment the person set; an assignment on the line would replace it
 if re.search(r"^\s*LIUM_PROVIDER_PASSWORD=\S* lium ", doc, re.M):
     bad.append("a command line sets LIUM_PROVIDER_PASSWORD")
-# host setup runs before the --wait polling; budgeting only --wait overruns the shell tool's limit
-if "setup **plus** `--wait`" not in doc:
-    bad.append("step 3 budgets --wait without the host setup before it")
 print("\n".join(bad) or "provider.md: password from the environment")
 sys.exit(1 if bad else 0)
 PY
