@@ -228,7 +228,9 @@ serves it only to hotkey accounts, and `lium provider idle-pay --json` answers `
 (exit 6) there. Run that once to tell. On such an account, `--fail-on-blocked` and `--until-clear` can never show the
 node clear, so do not use them: run `lium provider node get "$NODE" --json` without `--fail-on-blocked` and act on
 its `blocking_reasons` (listing and last error). The node is clear when none of them blocks and
-`lium provider node listing "$NODE" --json` shows `listed` or `rented`. Ask the person to read the idle-pay reasons
+`lium provider node listing "$NODE" --json` shows `listed` or `rented`, or `hidden` with only
+[hidden reasons that do not block](#hidden-without-blocking) (a node left paused after a `no_rentals` fix reads
+`hidden` with `NEW_RENTALS_PAUSED`). Ask the person to read the idle-pay reasons
 on the portal's Overview page.
 A reason has `code`, `gating`, `message`, `measured`, `required`, `fix`, `fix_command`, `verify_command`,
 `requires` and `docs_url`, and `kind` when the portal serves it (the CLI's fallback entries below may have no
@@ -277,8 +279,8 @@ lium provider node listing "$NODE" --json  # lium#295, not released yet
 Read two things from that row:
 
 - **Has a rental**: `data.rented_gpu_count` is above 0 (a partly rented node whose free GPUs are still offered reads
-  `listing_state: "listed"`), or, when an older portal sends `rented_gpu_count: null`, `data.listing_state` is
-  `rented`. Otherwise the node has **no rental**.
+  `listing_state: "listed"`), or `data.listing_state` is `rented`, whatever the count says (`0` or `null`).
+  Otherwise the node has **no rental**.
 - **Already paused**: `data.hidden_reasons` has an entry with `code` `NEW_RENTALS_PAUSED`. The portal lists it
   whenever new rentals are paused on the node, rented or not. `lium provider node get "$NODE" --json` shows the
   same fact as `data.new_rentals_pause_requested_at` (`null` while new rentals are taken).
@@ -490,7 +492,7 @@ Freeing disk unattended: delete only logs, caches and files the owner named. Nev
 containers (no `docker system prune`, no `docker volume rm`): a rental may be using them. If that does not free
 enough, hand over.
 
-`NEW_RENTALS_PAUSED`, `RECLAIMING`, `WHOLE_HOST_ONLY` and `SPLIT_MINIMUM_NOT_MET` hide the node without blocking it:
+<a id="hidden-without-blocking"></a>`NEW_RENTALS_PAUSED`, `RECLAIMING`, `WHOLE_HOST_ONLY` and `SPLIT_MINIMUM_NOT_MET` hide the node without blocking it:
 they are the owner's choice or the normal shape of a partial rental.
 
 **The validator's last error** (`kind: last_error`) always blocks renting. `code` is the validator's reason code and
