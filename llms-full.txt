@@ -2496,11 +2496,16 @@ token can only add a node to this account and watch its status. The portal's Add
 
 ### 3. Set up the GPU host and register the node
 
-On the GPU host, with the token from step 2:
+On the GPU host, with the token from step 2 in the environment variable `LIUM_REGISTER_TOKEN` (lium#295, not released yet):
 
 ```bash
-lium mine --register "$REGISTER_TOKEN" --wait 4 --json  # --json: lium#295, not released yet
+lium mine --wait 4 --json  # reads LIUM_REGISTER_TOKEN; both: lium#295, not released yet
 ```
+
+Never put the token on a command line, not even as `--register "$VAR"`: the shell expands it into the process's
+arguments, and any user on a shared host can read those in the process list. Set it with a shell assignment, which
+starts no process, such as `read -rs LIUM_REGISTER_TOKEN && export LIUM_REGISTER_TOKEN`. `lium mine` reads
+`LIUM_REGISTER_TOKEN` when `--register` is absent (lium#295, not released yet).
 
 Host setup runs before the `--wait` polling starts and can take a few minutes, so keep setup **plus** `--wait`
 below your shell tool's own time limit: with two minutes of setup and a five-minute limit, `--wait 2`, not 4. A
@@ -2560,8 +2565,9 @@ serves it only to hotkey accounts, and `lium provider idle-pay --json` answers `
 node clear, so do not use them: run `lium provider node get "$NODE" --json` without `--fail-on-blocked` and act on
 its `blocking_reasons` (listing and last error). The node is clear when none of them blocks and
 `lium provider node listing "$NODE" --json` shows `listed` or `rented`, or `hidden` with only
-[hidden reasons that do not block](#hidden-without-blocking) (a node left paused after a `no_rentals` fix reads
-`hidden` with `NEW_RENTALS_PAUSED`). Ask the person to read the idle-pay reasons
+[hidden reasons that do not block](#hidden-without-blocking) other than `RECLAIMING` (a node left paused after a
+`no_rentals` fix reads `hidden` with `NEW_RENTALS_PAUSED`). A node with `RECLAIMING` is never clear: its collateral
+is being reclaimed and the portal removes it when that ends, so report that to the person. Ask the person to read the idle-pay reasons
 on the portal's Overview page.
 A reason has `code`, `gating`, `message`, `measured`, `required`, `fix`, `fix_command`, `verify_command`,
 `requires` and `docs_url`, and `kind` when the portal serves it (the CLI's fallback entries below may have no
@@ -2618,19 +2624,27 @@ Read two things from that row:
 
 Then:
 
-- **No rental**: the node is free. Do not pause it. Go straight to the hand-over below.
-- **A rental, already paused**: do not call `node pause`. Wait for the rental to end, as below.
-- **A rental, not paused**: pause new rentals (the reason's `fix` starts with that step, worded for the portal's
-  Pause New Rentals button; `node pause` is the same action), then wait for the rental to end:
+- **Already paused**, with or without a rental: do not call `node pause`. With a rental, wait for it to end, as
+  below; with no rental, go to the hand-over below.
+- **Not paused**, with or without a rental: pause new rentals first (the reason's `fix` starts with that step,
+  worded for the portal's Pause New Rentals button; `node pause` is the same action). An idle node needs it too: a
+  renter can start between your read and the person's fix, and the fix would end that rental.
 
 ```bash
 lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
 ```
 
-`pause` also accepts an idle node and hides it at once. After `pause` exits 0, re-read
-`lium provider node listing "$NODE" --json`. If the node now has **no rental** by the test above, the rental ended
-between the two calls: leave the pause ([never resume](#never-resume)) and go straight to the hand-over with the pause
-line.
+`pause` accepts an idle node and hides it at once. After `pause` exits 0, re-read
+`lium provider node listing "$NODE" --json` and apply the test above again. **No rental**: leave the pause
+([never resume](#never-resume)) and go to the hand-over with the pause line. **A rental** (one that started before
+the pause, or was already running): wait for it to end, as below. Never hand over a fix as safe from the first read
+alone.
+
+If `pause` fails (any non-zero exit), do not hand the fix over as safe. Hand it over with this message instead:
+
+> Node <node_id> needs a fix that interrupts rentals: <fix>. I could not pause new rentals on it
+> (<error.code>). Before the fix, please use Pause New Rentals in the portal, check that the node shows no rental,
+> then do the fix and tell me when it is done.
 
 <a id="never-resume"></a>**Never resume new rentals yourself** in this flow, not even after your own `pause`. The portal answers a `pause` the
 same way whether that call paused the node or the owner had paused it a moment before, so the agent cannot prove the
@@ -2824,7 +2838,8 @@ containers (no `docker system prune`, no `docker volume rm`): a rental may be us
 enough, hand over.
 
 <a id="hidden-without-blocking"></a>`NEW_RENTALS_PAUSED`, `RECLAIMING`, `WHOLE_HOST_ONLY` and `SPLIT_MINIMUM_NOT_MET` hide the node without blocking it:
-they are the owner's choice or the normal shape of a partial rental.
+they are the owner's choice or the normal shape of a partial rental. `RECLAIMING` still means the node is on its way
+out ("Collateral reclaim in progress. Node will be removed after completion"), so it never makes a node clear.
 
 **The validator's last error** (`kind: last_error`) always blocks renting. `code` is the validator's reason code and
 `fix` its own remediation. Built by the CLI it has `requires_unknown: true`: relay `fix` in the hand-over message.
@@ -2914,17 +2929,17 @@ lium provider portal login --email <email> --json  # lium#295, not released yet
 
 ### Google-only account
 
-An account that signs in only with Google has no password, and an agent does not sign in with Google. Relay:
+An account that signs in only with Google has no password, and an agent does not sign in with Google. Relay, without the `<!-- … -->` comment:
 
 > Your Lium provider account signs in with Google, which I cannot do for you. Please sign in at
 > https://provider.lium.io, open Add Node, and run the install command it shows on the GPU host yourself (it starts
 > with `curl -fsSL` and contains `--register`; it works for one hour). If I should run it, set only its token as
-> `REGISTER_TOKEN` in my environment or secret settings. Do not paste the command or the token into this chat: anyone
+> `LIUM_REGISTER_TOKEN` in my environment or secret settings. <!-- lium#295, not released yet --> Do not paste the command or the token into this chat: anyone
 > who reads it can add a node to your account. When it finishes, tell me the node ID it printed and whether it
 > succeeded. The node ID is not secret.
 
-After, continue at step 3: with `REGISTER_TOKEN` set, run `lium mine --register "$REGISTER_TOKEN" --wait 2 --json` on
-the GPU host (size `--wait` as step 3 says); if the person ran the command, go straight to the check there. The
+After, continue at step 3: with `LIUM_REGISTER_TOKEN` set, run `lium mine --wait 2 --json` (lium#295, not released
+yet) on the GPU host, with no token on the command line (size `--wait` as step 3 says); if the person ran the command, go straight to the check there. The
 token rules of [step 1](#1-sign-in-pick-one) apply to it; if it lands in the chat, ask for a new one. For the later
 steps (diagnose, tier, earnings) ask for an API token instead, once the portal serves them *(coming with the next CLI
 release)*: relay the token message of [step 1](#1-sign-in-pick-one) without `--scope register`, and check it the
