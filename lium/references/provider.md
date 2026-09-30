@@ -176,10 +176,12 @@ Never put the token on a command line, not even as `--register "$VAR"`: the shel
 arguments, and any user on a shared host can read those in the process list. `lium mine` reads the variable when
 `--register` is absent. How it gets there (both lines: lium#295, not released yet):
 
-- When steps 2 and 3 run in one shell, assign it there: `export LIUM_REGISTER_TOKEN="$(lium provider node register-token --json --yes | jq -r .data.token)"` (lium#295).
-  `jq` reads the token on stdin, and `export` is a shell built-in that starts no process.
-- Otherwise ask the person to set `LIUM_REGISTER_TOKEN` in the GPU host shell's environment or your secret settings,
-  never in the chat.
+- When steps 2 and 3 run in one shell, assign it there:
+  `LIUM_REGISTER_TOKEN="$(lium provider node register-token --json --yes | jq -er .data.token)" && export LIUM_REGISTER_TOKEN` (lium#295).
+  `jq` reads the token on stdin, and the assignment and `export` start no process. If the line fails, do not run
+  `lium mine`: run step 2 alone and act on its error.
+- Otherwise ask the person to set `LIUM_REGISTER_TOKEN` (lium#295) in the GPU host shell's environment or your
+  secret settings, never in the chat.
 
 Host setup runs before the `--wait` polling starts and can take a few minutes, so keep setup **plus** `--wait`
 below your shell tool's own time limit: with two minutes of setup and a five-minute limit, `--wait 2`, not 4. A
@@ -367,13 +369,13 @@ The verdict lands when the validator publishes its next cycle, so a clear node c
 clear. Give `--timeout` a value below your shell tool's own time limit (300 s above; less if your tool stops commands
 sooner), and re-run the command until the node is clear or 1800 s have passed in total. After each run:
 
-- **Clear** only when the command exits 0 **and** the last JSON object on stdout has `data.blocking_reasons` with no
-  entry that blocks by the rule of [step 4](#4-diagnose): none with `gating: true`, and none with a `kind` other
-  than `idle_pay` (an entry without `kind` counts as idle pay). Exit 0 alone is not proof of clear:
+- **Clear** only when the command exits 0, the last JSON object on stdout has `data.blocking_reasons` with no
+  entry that blocks by the rule of [step 4](#4-diagnose) (none with `gating: true`, and none with a `kind` other
+  than `idle_pay`; an entry without `kind` counts as idle pay), **and** `lium provider node listing "$NODE" --json`
+  shows no `RECLAIMING` in `hidden_reasons` ([never clear](#hidden-without-blocking)). Exit 0 alone is not proof of clear:
   on a CLI without `input.interrupted`, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
   with the node still blocked, and so does Ctrl-C on plain `--watch` in a terminal. A last object with a blocking entry, or without `data.blocking_reasons`, is not
-  clear: re-run. Then read `lium provider node listing "$NODE" --json` once: a node whose `hidden_reasons` has
-  `RECLAIMING` is [never clear](#hidden-without-blocking), whatever the watch said. Report it to the person.
+  clear: re-run. A node with `RECLAIMING` is not clear whatever the watch said: report it to the person.
 - **Exit 130** (`input.interrupted`): the run was stopped by Ctrl-C before the node was clear. It says nothing
   about the node: re-run while the 1800 s budget lasts.
 - **Exit 10**: still blocked when this run's `--timeout` passed; the reasons are in `error.data`. Re-run while the
@@ -610,7 +612,8 @@ An account that signs in only with Google has no password, and an agent does not
 
 > Your Lium provider account signs in with Google, which I cannot do for you. Please sign in at
 > https://provider.lium.io, open Add Node, and run the install command it shows on the GPU host yourself (it starts
-> with `curl -fsSL` and contains `--register`; it works for one hour). If I should run it, set only its token as
+> with `curl -fsSL` and contains `--register`; it works for one hour). If other people can log in to that host, do
+> not run that line: it shows the token to them in the process list. If I should run it, or the host is shared, set only its token as
 > `LIUM_REGISTER_TOKEN` in my environment or secret settings. <!-- lium#295, not released yet --> Do not paste the command or the token into this chat: anyone
 > who reads it can add a node to your account. When it finishes, tell me the node ID it printed and whether it
 > succeeded. The node ID is not secret.
