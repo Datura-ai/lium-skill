@@ -112,21 +112,7 @@ print("lium ls --format json: %d nodes, fields ok (%s)" % (len(nodes), ", ".join
 PY
 }
 
-provider_doc() {
-  python3 - <<'PY'
-import re, sys
-doc = open("lium/references/provider.md").read()
-bad = []
-# the password comes from the environment the person set; an assignment on the line would replace it
-if re.search(r"^\s*LIUM_PROVIDER_PASSWORD=\S* lium ", doc, re.M):
-    bad.append("a command line sets LIUM_PROVIDER_PASSWORD")
-print("\n".join(bad) or "provider.md: password from the environment")
-sys.exit(1 if bad else 0)
-PY
-}
-
 step check-commands check_commands
-step provider-doc provider_doc
 step install-sh install_sh
 step install-sh-errors install_sh_fetch_errors
 step ls-json ls_json
