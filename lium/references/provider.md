@@ -160,8 +160,9 @@ lium provider token revoke <TOKEN_ID> --json --yes  # lium#295, not released yet
 lium provider node register-token --json --yes  # lium#295, not released yet
 ```
 
-Success: `data.token`, `data.expires_at` (one hour) and `data.install_command`, the line to run on the GPU host. The
-token can only add a node to this account and watch its status. The portal's Add Node page shows the same line.
+Success: `data.token`, `data.expires_at` (one hour) and `data.install_command`. The token can only add a node to
+this account and watch its status. Do not run `data.install_command` (the portal's Add Node page shows the same
+line): it carries the token on the command line. Use `data.token` as step 3 says.
 
 ### 3. Set up the GPU host and register the node
 
@@ -172,9 +173,13 @@ lium mine --wait 4 --json  # reads LIUM_REGISTER_TOKEN; both: lium#295, not rele
 ```
 
 Never put the token on a command line, not even as `--register "$VAR"`: the shell expands it into the process's
-arguments, and any user on a shared host can read those in the process list. Set it with a shell assignment, which
-starts no process, such as `read -rs LIUM_REGISTER_TOKEN && export LIUM_REGISTER_TOKEN`. `lium mine` reads
-`LIUM_REGISTER_TOKEN` when `--register` is absent (lium#295, not released yet).
+arguments, and any user on a shared host can read those in the process list. `lium mine` reads the variable when
+`--register` is absent. How it gets there (both lines: lium#295, not released yet):
+
+- When steps 2 and 3 run in one shell, assign it there: `export LIUM_REGISTER_TOKEN="$(lium provider node register-token --json --yes | jq -r .data.token)"` (lium#295).
+  `jq` reads the token on stdin, and `export` is a shell built-in that starts no process.
+- Otherwise ask the person to set `LIUM_REGISTER_TOKEN` in the GPU host shell's environment or your secret settings,
+  never in the chat.
 
 Host setup runs before the `--wait` polling starts and can take a few minutes, so keep setup **plus** `--wait`
 below your shell tool's own time limit: with two minutes of setup and a five-minute limit, `--wait 2`, not 4. A
@@ -182,7 +187,7 @@ node that is not listed by then exits 11, and step 4 and the watch of step 5 tak
 stops the command before it prints a result, re-run the same command (a node that is already registered is not
 added twice) or go to step 4.
 
-`--register` implies `--auto` (default ports: service 8080, SSH 2200). The CLI adds the node with the GPU model and
+A register token, from `--register` or `LIUM_REGISTER_TOKEN` (lium#295), implies `--auto` (default ports: service 8080, SSH 2200). The CLI adds the node with the GPU model and
 count `nvidia-smi` reports, the host's public IPv4 and the model's base price, then polls until the node is listed
 or `--wait` minutes pass. `--price` and `--gpu-type` override the price and the portal GPU name. `--json` on
 `lium mine` is *(coming with the next CLI release)*: each step is a line on stderr
@@ -235,8 +240,8 @@ node clear, so do not use them: run `lium provider node get "$NODE" --json` with
 its `blocking_reasons` (listing and last error). The node is clear when none of them blocks and
 `lium provider node listing "$NODE" --json` shows `listed` or `rented`, or `hidden` with only
 [hidden reasons that do not block](#hidden-without-blocking) other than `RECLAIMING` (a node left paused after a
-`no_rentals` fix reads `hidden` with `NEW_RENTALS_PAUSED`). A node with `RECLAIMING` is never clear: its collateral
-is being reclaimed and the portal removes it when that ends, so report that to the person. Ask the person to read the idle-pay reasons
+`no_rentals` fix reads `hidden` with `NEW_RENTALS_PAUSED`). A node with `RECLAIMING` is
+[never clear](#hidden-without-blocking) on any account. Ask the person to read the idle-pay reasons
 on the portal's Overview page.
 A reason has `code`, `gating`, `message`, `measured`, `required`, `fix`, `fix_command`, `verify_command`,
 `requires` and `docs_url`, and `kind` when the portal serves it (the CLI's fallback entries below may have no
@@ -309,7 +314,8 @@ lium provider node pause "$NODE" --json --yes  # lium#295, not released yet
 the pause, or was already running): wait for it to end, as below. Never hand over a fix as safe from the first read
 alone.
 
-If `pause` fails (any non-zero exit), do not hand the fix over as safe. Hand it over with this message instead:
+If `pause` fails (any non-zero exit), do not hand the fix over as safe. Hand it over with this message and the
+pause line instead:
 
 > Node <node_id> needs a fix that interrupts rentals: <fix>. I could not pause new rentals on it
 > (<error.code>). Before the fix, please use Pause New Rentals in the portal, check that the node shows no rental,
@@ -366,7 +372,8 @@ sooner), and re-run the command until the node is clear or 1800 s have passed in
   than `idle_pay` (an entry without `kind` counts as idle pay). Exit 0 alone is not proof of clear:
   on a CLI without `input.interrupted`, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
   with the node still blocked, and so does Ctrl-C on plain `--watch` in a terminal. A last object with a blocking entry, or without `data.blocking_reasons`, is not
-  clear: re-run.
+  clear: re-run. Then read `lium provider node listing "$NODE" --json` once: a node whose `hidden_reasons` has
+  `RECLAIMING` is [never clear](#hidden-without-blocking), whatever the watch said. Report it to the person.
 - **Exit 130** (`input.interrupted`): the run was stopped by Ctrl-C before the node was clear. It says nothing
   about the node: re-run while the 1800 s budget lasts.
 - **Exit 10**: still blocked when this run's `--timeout` passed; the reasons are in `error.data`. Re-run while the
@@ -508,7 +515,8 @@ enough, hand over.
 
 <a id="hidden-without-blocking"></a>`NEW_RENTALS_PAUSED`, `RECLAIMING`, `WHOLE_HOST_ONLY` and `SPLIT_MINIMUM_NOT_MET` hide the node without blocking it:
 they are the owner's choice or the normal shape of a partial rental. `RECLAIMING` still means the node is on its way
-out ("Collateral reclaim in progress. Node will be removed after completion"), so it never makes a node clear.
+out ("Collateral reclaim in progress. Node will be removed after completion"), so a node with it is never clear on any
+account, even when nothing in `blocking_reasons` blocks (the CLI builds no entry for it). Report it to the person.
 
 **The validator's last error** (`kind: last_error`) always blocks renting. `code` is the validator's reason code and
 `fix` its own remediation. Built by the CLI it has `requires_unknown: true`: relay `fix` in the hand-over message.
