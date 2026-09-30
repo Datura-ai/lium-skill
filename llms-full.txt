@@ -2465,13 +2465,13 @@ these exceptions *(coming with the next CLI release)*:
 A token lets later runs work without the wallet or the password *(coming with the next CLI release; until the
 portal serves API tokens it answers `portal.not_supported`, exit 3)*. Do not run `token create` yourself: it prints
 the secret once, in its output, and your tool output would then hold it. The person mints it in a shell of their own
-and sets it in your environment. For a hotkey or e-mail owner, relay this, and leave out the `--scope register` line
-when you only diagnose (step 2 needs `register` to add nodes):
+and sets it in your environment. For a hotkey or e-mail owner, relay this as written, but omit the inline HTML
+comments, and drop `--scope register` from the command when you only diagnose (step 2 needs `register` to add nodes):
 
 > Please create a Lium provider API token for me in your own shell, where you are signed in to the Lium provider CLI:
-> `lium provider token create --name my-agent --scope read --scope register --expires-days 30 --json --yes`
+> `lium provider token create --name my-agent --scope read --scope register --expires-days 30 --json --yes` <!-- lium#295, not released yet -->
 > (add `--scope node --scope tier` only if you want me to change your nodes' price, pause state, GPU minimum or
-> tier). Do not paste the token into this chat: set it yourself as `LIUM_PROVIDER_TOKEN` in my environment or secret
+> tier). Do not paste the token into this chat: set it yourself as `LIUM_PROVIDER_TOKEN` in my environment or secret <!-- lium#295, not released yet -->
 > settings, then tell me when it is set. You can revoke it at any time with `lium provider token revoke`.
 
 A Google-only owner gets the message in [Google-only account](#google-only-account). Then check the token with
@@ -2695,8 +2695,7 @@ cluster), then run `tier set` again. If a blocker is still there after 6 hours, 
 
 Done when `tier set` exits 0 and `listing` shows `data.listing_state: "listed"`. A node that
 [step 5](#5-fix-then-verify) left paused stays `hidden` (`NEW_RENTALS_PAUSED`) until the person resumes it: then
-`tier set` exiting 0 is the Secure check, and you end with the pause line of step 5 instead of waiting for
-`listed`.
+`tier set` exiting 0 is the Secure check. Do not wait for `listed`: end with the pause line of step 5.
 
 Other node changes:
 
