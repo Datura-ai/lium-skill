@@ -36,6 +36,14 @@ Sign up without an email (headless — the fingerprint is a 32-char string, not 
   Returns fingerprint (dashboard login, shown once, no recovery) and api_key when minting succeeds.
   api_key can be null; signup credit also depends on the platform setting and prior use of the IP.
 
+Zero to a running pod, as an agent (measured on lium.io, 26 Sep 2026):
+  POST /api/auth/signup                      0.3 s   account + api_key, no email (keep the fingerprint: it is the only login)
+  POST /api/auth/login + POST /api/keys      0.9 s   a key with only the "billing" scope
+  POST /api/stripe/create-checkout-session   0.5 s   a card page for a person to pay; credited ~2 s after they pay
+  POST /api/tmc-pay/create-invoice           1.3 s   or a stablecoin invoice (USDC on Base and others)
+  lium up --gpu <model> --ttl 30m --yes --json  22-26 s to SSH ready on a cached image
+  Copy-paste script and timing table: "Fastest Path" in the skill file below.
+
 Primary resources:
 - Full reference (self-contained):   https://lium.io/llms-full.txt
 - Agent guide (docs site):           https://docs.lium.io/developers/agents.md

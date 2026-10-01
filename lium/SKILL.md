@@ -54,6 +54,61 @@ uv tool install lium.io
 pip install lium.io
 ```
 
+## Fastest Path: Zero to a Running Pod (measured)
+
+An agent with nothing gets an account, a funded balance and a pod with SSH ready in one script. The
+only step that can need a person is the payment itself (a card form, a 3-D Secure check, or a wallet
+send). Copy-paste, with `jq` and the CLI installed:
+
+```bash
+set -euo pipefail
+API=https://lium.io/api
+umask 077                                                       # the files below hold credentials
+mkdir -p -m 700 ~/.ssh && { [ -f ~/.ssh/id_ed25519 ] || ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519; }  # lium up needs an SSH key
+# 1. Account + rent key, no e-mail (0.3 s). The fingerprint is the only login: keep it.
+[ -s account.json ] || curl -fsS -X POST $API/auth/signup -H 'Content-Type: application/json' -d '{}' > account.json
+LIUM_API_KEY=$(jq -er .api_key account.json)                    # fails if the key was not minted (it can be null)
+export LIUM_API_KEY
+# 2. A key that can only pay (session login 0.4 s + mint 0.4 s). It reaches no pods.
+TOKEN=$(curl -fsS -X POST $API/auth/login -H 'Content-Type: application/json' \
+  -d "{\"fingerprint\":\"$(jq -r .fingerprint account.json)\"}" | jq -er .token)
+bkey=$(curl -fsS -X POST $API/keys -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"agent-billing","scopes":["billing"]}' | jq -er .key)
+# 3a. Card: a Stripe page for a person to pay (0.5 s; nothing is charged until they pay)
+curl -fsS -X POST $API/stripe/create-checkout-session -H "X-API-KEY: $bkey" -H 'Content-Type: application/json' \
+  -d '{"amount":10,"success_url":"https://lium.io/billing?success=true","cancel_url":"https://lium.io/billing"}' | jq -r .url
+# 3b. Or crypto: an invoice to pay from a wallet (1.3 s)
+# curl -fsS -X POST $API/tmc-pay/create-invoice -H "X-API-KEY: $bkey" -H 'Content-Type: application/json' \
+#   -d '{"amount":10,"crypto_currency":"USDC","crypto_network":"base"}' | jq '{deposit_address,crypto_amount}'
+# 4. Wait for the credit (card: about 2 s after the payment)
+for i in $(seq 450); do                                           # up to 15 min
+  [ "$(curl -fsS $API/users/me -H "X-API-KEY: $LIUM_API_KEY" | jq '.balance > 0')" = true ] && break; sleep 2
+done
+[ "$(curl -fsS $API/users/me -H "X-API-KEY: $LIUM_API_KEY" | jq '.balance > 0')" = true ]   # stops here if not credited
+# 5. Rent the cheapest matching node; returns when SSH answers (about 22-26 s on a cached image)
+POD=$(lium up --gpu RTX4090 --ttl 30m --yes --json | jq -r .pod.huid)
+lium exec "$POD" --json "nvidia-smi -L"
+```
+
+Measured on lium.io, 26 Sep 2026, from a cloud VM:
+
+| Step | Seconds | Needs a person? |
+|---|---:|---|
+| Account + API key, no e-mail (`POST /auth/signup`) | 0.3 | no |
+| Account + API key + SSH key, with e-mail (`lium signup --email`) | 1.3 | no; the verification link does not gate renting |
+| Session login + billing-only key | 0.9 | no |
+| Steps 1–3a above as one script: nothing → payment link | 1.5 | no |
+| Card payment page (Stripe Checkout) | 0.5–0.9 | the payer enters a card |
+| Card payment → balance credited (webhook, median) | 2.0 | — |
+| Crypto invoice | 1.3–1.4 | the payer sends from a wallet |
+| `lium ls --format json` | 0.6 | no |
+| `lium up … --json` → SSH ready, cached image | 22–26 | no |
+| `lium up` → SSH ready, image not cached on the node (median) | ~55 | no |
+
+Everything except the payment and the pod start takes about 3 s. Renting needs a balance above 15
+minutes of the node's price; a $0 balance is refused in about 3 s with `insufficient_balance` (exit 6).
+Card top-up straight from a saved card through the API (`lium topup card`) is not switched on yet.
+
 ## Agent-Specific: Non-Interactive Usage
 
 **CRITICAL**: Many lium commands are interactive by default. As an agent, always pass all parameters explicitly to avoid interactive prompts.
