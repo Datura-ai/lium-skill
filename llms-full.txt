@@ -2685,8 +2685,9 @@ its answer, and `data.pause_id` and `data.paused_by_this_call` when it has them 
     time: "When the fix is done and you want rentals again, run
     `lium provider node resume <node_id> --pause-id <pause_id>`. It resumes only my pause: if someone paused the
     node again since, it is refused and their pause stays." (`--pause-id`: lium#298, not released yet);
-  - otherwise: "Before you resume, check in the portal who paused the node and when, and resume only if that pause
-    is no longer needed."
+  - otherwise: "Before you resume, check with anyone who may have paused the node, and resume only when the
+    current pause is no longer needed." The portal shows only that new rentals are paused and since when, not who
+    paused them, so do not send the person there to find out.
 
   The `<reason>`:
   - your `pause` exited 0 with `paused_by_this_call: true` (or without that field) and `<time>` is still the time

@@ -34,6 +34,7 @@ block = text[start:text.index("**Everything else**", start)]
 commands = re.findall(r"lium provider node resume[^`]*", block)
 bare = [c for c in commands if "--pause-id" not in c]
 assert commands and not bare, "pause line: resume commands %r, bare %r" % (commands, bare)
+assert "check in the portal who paused" not in block, "pause line: the portal does not show who paused a node"
 print("pause line: %d resume command(s), all with --pause-id" % len(commands))
 PY
 }
