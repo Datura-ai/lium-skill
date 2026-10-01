@@ -266,8 +266,7 @@ its fix.
 
 ### 5. Fix, then verify
 
-For each reason that blocks by the rule of [step 4](#4-diagnose) (`gating: true`, a `kind` other than
-`idle_pay`, or no `gating` and a code the [table](#blocking-reasons) does not mark `gating: false`), decide first whether you may fix it at all.
+For each reason that blocks by the rule of [step 4](#4-diagnose), decide first whether you may fix it at all.
 
 **Stop and hand over** ([Reboots and other host steps](#reboots-and-other-host-steps)) when any of these holds:
 
@@ -371,9 +370,7 @@ clear. Give `--timeout` a value below your shell tool's own time limit (300 s ab
 sooner), and re-run the command until the node is clear or 1800 s have passed in total. After each run:
 
 - **Clear** only when the command exits 0, the last JSON object on stdout has `data.blocking_reasons` with no
-  entry that blocks by the rule of [step 4](#4-diagnose) (none with `gating: true`, none with a `kind` other
-  than `idle_pay`, and none without `gating` whose code the [table](#blocking-reasons) does not mark `gating: false`;
-  an entry without `kind` counts as idle pay, so `{"code": "future_gate", "requires_unknown": true}` blocks), **and** `lium provider node listing "$NODE" --json`
+  entry that blocks by the rule of [step 4](#4-diagnose), **and** `lium provider node listing "$NODE" --json`
   shows no `RECLAIMING` in `hidden_reasons` ([never clear](#hidden-without-blocking)). Exit 0 alone is not proof of clear:
   on a CLI without `input.interrupted`, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
   with the node still blocked, and so does Ctrl-C on plain `--watch` in a terminal. A last object with a blocking entry, or without `data.blocking_reasons`, is not
@@ -460,7 +457,7 @@ lium provider ledger --from 2026-09-01 --json  # lium#295, not released yet
 `earnings` is rental earnings per UTC day (default: the last 7 days); `--emissions` is the daily incentive instead,
 and `--node` (repeatable) narrows it. `idle-pay` gives, for each node with a free GPU, `idle_pay`: `paid`,
 `not_paid` (with `idle_pay_reasons`, the validator's codes, which the [Blocking reasons](#blocking-reasons) table
-explains), `rented_last_cycle` or `unknown` (no validator cycle yet); a fully rented node has `idle_pay: null`. The
+explains; a code not in the table: report it to the person, no action), `rented_last_cycle` or `unknown` (no validator cycle yet); a fully rented node has `idle_pay: null`. The
 top level has `idle_pay_usd` over `window_days` and the `idle`, `idle_earning` and `idle_unpaid` counts. Idle pay
 needs a linked Discord account: see [Discord linking](#discord-linking).
 

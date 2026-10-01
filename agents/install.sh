@@ -64,33 +64,61 @@ FILES=(
   "lium/references/sdk-reference.md"
   "lium/references/provider.md"
 )
+# Added after the first refs: a LIUM_SKILL_VERSION pinned before them has no such file, so a 404 skips it, but only
+# when that ref's SKILL.md does not link it; a copy left from a newer install is then moved aside. Any other failure
+# (network error, 5xx) fails the install (exit 1) before any file in that agent's directory is replaced;
+# the directories installed before it keep the new version, and the failure names them.
+OPTIONAL_FILES=" lium/references/provider.md "
+updated_dirs=""
+# Every *.part this run creates; on any exit (a failure, Ctrl-C, a kill) the ones still there are removed.
+part_files=()
+remove_parts() { local p; for p in ${part_files[@]+"${part_files[@]}"}; do rm -f "$p"; done; }
+trap remove_parts EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 install_into() {
   local target_root="$1" label="$2"
   local dest="$target_root/lium"
+  local staged=() skipped=()
   info "Installing lium skill → $dest ($label, ref: $LIUM_SKILL_VERSION)"
   mkdir -p "$dest/references"
+  # Download every file to *.part first; move them into place only once all have arrived.
   for rel in "${FILES[@]}"; do
     local dest_rel="${rel#lium/}"
     local url="$RAW_BASE/$rel"
     local out="$dest/$dest_rel"
     mkdir -p "$(dirname "$out")"
 
+    local rc=0 http_code
+    part_files+=("$out.part")
+    http_code=$(curl -fsSL -w '%{http_code}' "$url" -o "$out.part") || rc=$?
+    if [[ $rc -ne 0 ]]; then
+      rm -f "$out.part"
+      if [[ $rc -eq 22 && "$http_code" == 404 && "$OPTIONAL_FILES" == *" $rel "* ]] \
+        && ! grep -qF "($dest_rel)" "$dest/SKILL.md.part"; then
+        warn "skipped $rel: not at ref $LIUM_SKILL_VERSION"
+        skipped+=("$out")
+        continue
+      fi
+      [[ -z "$updated_dirs" ]] || warn "already updated to $LIUM_SKILL_VERSION:$updated_dirs; $dest is unchanged"
+      fail "failed to download $url (curl exit $rc, HTTP ${http_code:-none})"
+    fi
+    staged+=("$out")
+  done
+  for out in ${staged[@]+"${staged[@]}"}; do
     # Preserve user edits: back up existing file unless --force
     if [[ -f "$out" && $force -eq 0 ]]; then
       cp "$out" "$out.bak"
     fi
-
-    if ! curl -fsSL "$url" -o "$out"; then
-      # a LIUM_SKILL_VERSION from before provider.md has no such file, and its SKILL.md does not link it
-      if [[ "$rel" == "lium/references/provider.md" ]] && ! grep -qF "($dest_rel)" "$dest/SKILL.md"; then
-        rm -f "$out"
-        warn "skipped $rel: not at ref $LIUM_SKILL_VERSION"
-        continue
-      fi
-      fail "failed to download $url"
-    fi
+    mv "$out.part" "$out"
   done
+  for out in ${skipped[@]+"${skipped[@]}"}; do
+    [[ -f "$out" ]] || continue
+    if [[ $force -eq 0 ]]; then mv "$out" "$out.bak"; else rm -f "$out"; fi
+    warn "removed ${out#"$dest/"}: ref $LIUM_SKILL_VERSION has none$([[ $force -eq 0 ]] && echo "; kept as ${out##*/}.bak")"
+  done
+  updated_dirs+=" $dest"
   ok "Installed $label skill ($(wc -l < "$dest/SKILL.md" | tr -d ' ') lines in SKILL.md)"
 }
 
