@@ -3,7 +3,8 @@
 #   1. the checker's negative control passes (scripts/test_check_cli_examples.py: planted stale lines, incl. on
 #      `lium mine`, are reported), then every `lium …` command line in SKILL.md, references/, README and llms.txt parses
 #      against the released CLI (subcommand exists, every --flag accepted; upcoming flags allow-listed in
-#      .cli-upcoming.txt with their PR);
+#      .cli-upcoming.txt with their PR); and provider.md's blocking rule reads the same in step 4, step 5 and the
+#      watch's Clear predicate (scripts/test_provider_clear_rule.py, on provider.md and llms-full.txt);
 #   2. agents/install.sh installs THIS checkout (served locally) into a throwaway HOME for Claude Code, Cursor and Codex,
 #      and what it installed is byte-identical to the repo; a 404 for provider.md from a ref whose SKILL.md does not
 #      link it skips it with a warning (exit 0) and moves an earlier provider.md aside, and a 500, a body cut short, a
@@ -126,6 +127,7 @@ PY
 }
 
 step check-commands check_commands
+step doc-contract python3 "$(dirname "$0")/test_provider_clear_rule.py"
 step install-sh install_sh
 step install-sh-errors install_sh_fetch_errors
 step ls-json ls_json

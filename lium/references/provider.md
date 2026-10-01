@@ -266,8 +266,8 @@ its fix.
 
 ### 5. Fix, then verify
 
-For each reason that blocks by the rule of [step 4](#4-diagnose) (`gating: true`, or a `kind` other than
-`idle_pay`), decide first whether you may fix it at all.
+For each reason that blocks by the rule of [step 4](#4-diagnose) (`gating: true`, a `kind` other than
+`idle_pay`, or no `gating` and a code the [table](#blocking-reasons) does not mark `gating: false`), decide first whether you may fix it at all.
 
 **Stop and hand over** ([Reboots and other host steps](#reboots-and-other-host-steps)) when any of these holds:
 
@@ -371,8 +371,9 @@ clear. Give `--timeout` a value below your shell tool's own time limit (300 s ab
 sooner), and re-run the command until the node is clear or 1800 s have passed in total. After each run:
 
 - **Clear** only when the command exits 0, the last JSON object on stdout has `data.blocking_reasons` with no
-  entry that blocks by the rule of [step 4](#4-diagnose) (none with `gating: true`, and none with a `kind` other
-  than `idle_pay`; an entry without `kind` counts as idle pay), **and** `lium provider node listing "$NODE" --json`
+  entry that blocks by the rule of [step 4](#4-diagnose) (none with `gating: true`, none with a `kind` other
+  than `idle_pay`, and none without `gating` whose code the [table](#blocking-reasons) does not mark `gating: false`;
+  an entry without `kind` counts as idle pay, so `{"code": "future_gate", "requires_unknown": true}` blocks), **and** `lium provider node listing "$NODE" --json`
   shows no `RECLAIMING` in `hidden_reasons` ([never clear](#hidden-without-blocking)). Exit 0 alone is not proof of clear:
   on a CLI without `input.interrupted`, Ctrl-C (SIGINT, which some tools send to stop a command) also exits 0
   with the node still blocked, and so does Ctrl-C on plain `--watch` in a terminal. A last object with a blocking entry, or without `data.blocking_reasons`, is not
