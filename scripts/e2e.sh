@@ -20,7 +20,20 @@ step() { local name=$1; shift; echo "::group::$name"; "$@"; local rc=$?; echo ":
 
 check_commands() {
   python3 scripts/test_check_cli_examples.py && python3 scripts/check-cli-examples.py --allow .cli-upcoming.txt lium README.md llms.txt \
-    && pause_line_resume_is_guarded
+    && pause_line_resume_is_guarded && clear_uses_the_step_4_rule
+}
+
+# A reason with neither `kind` nor `gating` (say {code:"future_gate"}) blocks by step 4, so the watch's Clear must
+# use that rule, not a narrower "no gating: true" test.
+clear_uses_the_step_4_rule() {
+  python3 - lium/references/provider.md <<'PY'
+import re, sys
+text = re.sub(r"\s+", " ", open(sys.argv[1]).read())
+assert "a reason without `gating` blocks unless the" in text, "step 4: the missing-gating default is gone"
+clear = text[text.index("**Clear** only when"):][:300]
+assert "blocks by the rule of [step 4](#4-diagnose)" in clear, "Clear does not use the step-4 rule: %r" % clear
+print("Clear: uses the step-4 rule, which blocks a reason without gating")
+PY
 }
 
 # The pause line hands the person a resume guarded by the agent's own pause id: a bare `node resume` there would clear
@@ -55,20 +68,21 @@ install_sh() {
   rm -rf "$home"; return $rc
 }
 
-# Serves this checkout, but answers the file argv[2] with argv[3]: an HTTP status, `drop` (a body cut short), or
-# `oldref` (a 404, with SKILL.md served without the lines linking that file, as a ref older than the file).
+# Serves this checkout, but answers the file argv[2] with argv[3]: an HTTP status, `drop` (a body cut short),
+# `oldref` (a 404, with SKILL.md served without the lines linking that file, as a ref older than the file), or
+# `oldref500` (that older SKILL.md, and a 500 for the file: only a 404 may be skipped).
 SERVE_WITH_FAULT='
 import http.server, os, sys
 port, path, fault = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
-        if fault == "oldref" and self.path.endswith("/lium/SKILL.md"):
+        if fault.startswith("oldref") and self.path.endswith("/lium/SKILL.md"):
             link = "(" + os.path.relpath(path, "lium") + ")"
             body = "".join(l for l in open("lium/SKILL.md") if link not in l).encode()
             self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
             return self.wfile.write(body)
-        fault_ = "404" if fault == "oldref" else fault
+        fault_ = {"oldref": "404", "oldref500": "500"}.get(fault, fault)
         if not self.path.endswith("/" + path) or fault_ == "none":
             return super().do_GET()
         if fault_ != "drop":
@@ -80,7 +94,7 @@ http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
 
 # Each case: the file, its fault, the install flags. A provider.md 404 from a ref whose SKILL.md does not link it
 # (`oldref`) is skipped (exit 0) and an earlier provider.md goes to provider.md.bak (removed with --force); any other
-# fault, a provider.md 404 while SKILL.md links it included, fails the install (exit 1) with the earlier SKILL.md
+# fault, a provider.md 404 while SKILL.md links it and a 500 from that older ref included, fails the install (exit 1) with the earlier SKILL.md
 # kept and no .part left; with no fault and no --force the earlier SKILL.md is kept as SKILL.md.bak.
 install_sh_fetch_errors() {
   local home port pid out code skill guide rc=0 file fault flags
@@ -113,6 +127,7 @@ install_sh_fetch_errors() {
 lium/references/provider.md 404 --force
 lium/references/provider.md oldref
 lium/references/provider.md oldref --force
+lium/references/provider.md oldref500 --force
 lium/references/provider.md 500 --force
 lium/references/provider.md drop --force
 lium/SKILL.md 404 --force
