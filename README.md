@@ -41,6 +41,7 @@ lium init
 | `llms.txt` | Short discovery index for agents |
 | `llms-full.txt` | Self-contained reference, generated from the files above |
 | `scripts/build-llms-full.sh` | Generates `llms-full.txt` (SKILL.md without frontmatter + the three references) |
+| `server.json` | [MCP Registry](https://registry.modelcontextprotocol.io) entry for the docs MCP endpoint `https://docs.lium.io/mcp`; a change on `main` publishes it (bump `version`) |
 | `.github/CODEOWNERS`, `.github/REVIEWING.md` | Who reviews each path and how |
 
 `lium.io/llms.txt` and `lium.io/llms-full.txt` are served from this repo's `main`.
