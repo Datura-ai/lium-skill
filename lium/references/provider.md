@@ -396,6 +396,11 @@ lium provider node tier set "$NODE" secure --json --yes  # lium#295, not release
 lium provider node listing "$NODE" --json  # lium#295, not released yet
 ```
 
+Moving a node to Secure is the owner's decision, like a price or a GPU minimum: Spot is the reclaimable tier, and
+Secure takes that away. Before `tier set`, ask the owner, naming each node and its current tier (`data.tier` from
+`node get "$NODE" --json`), and run it only for the nodes they agree to. If you cannot ask, leave the tier and report
+which nodes are on Spot.
+
 `eligibility` answers `data.allowed` and `data.blockers` (`{code, message}`: `rented`, `cluster_member`). A refused
 change is exit 3: `portal.tier_change_blocked` with the blocker in `error.data`, or `portal.request_rejected` with
 the reason only in `error.message` (the portal refuses it today without a code). Either way, re-run `eligibility`
@@ -422,11 +427,14 @@ started after `tier set` does not undo it) and `hidden` with `NEW_RENTALS_PAUSED
 | exit 3 | — | — | Refused: the `eligibility` wait above |
 
 Never re-run `tier set` to clear a Spot tier: a demotion is for the whole account and only ends at the backend's
-refresh. Hand over with the figures from `data.account_demotion`:
+refresh. Hand over with the figures from `data.account_demotion`. `back_by` is null when no counted penalty explains
+the demotion (a manual ban or a stale snapshot, for example): then give no date. A set `back_by` holds only while no
+new penalty is counted; a later penalty moves it, so read a fresh `node get` before you repeat a date.
 
 > Node <node_id> is set to Secure, but renters still see it as Spot. <The account is demoted: penalties cover
-> <penalty_coverage_pct> % of its last <window_days> days, above the <threshold_pct> % limit. It is back to Secure
-> by <back_by> UTC | It stays demoted until its counted penalties age out.> Nothing I can change moves it sooner.
+> <penalty_coverage_pct> % of its last <window_days> days, above the <threshold_pct> % limit.> <If no new penalties
+> occur, it is back to Secure by <back_by> UTC. | No penalty date explains it: check again after <next_refresh_at>
+> UTC, and contact support if it is still demoted.> Nothing I can change moves it sooner.
 
 Other node changes:
 
