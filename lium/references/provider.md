@@ -95,13 +95,15 @@ account, and no step of this journey needs it.
 
 ### 1. Sign in (pick one)
 
-The account decides the path. A person who signs in to the portal with Google has no password: see
-[Google-only account](#google-only-account).
+**Use the hotkey (a).** Provider sign-up with e-mail or Google is not open yet: the portal does not let a new
+provider account sign in that way, so b), the [Google-only account](#google-only-account) path and
+[E-mail confirmation](#e-mail-confirmation) are not available until it opens. An owner without a hotkey cannot start
+the journey yet: tell them so, and do not send them to the portal's Add Node page.
 
 ```bash
 # a) hotkey in a wallet on this machine
 LIUM_PROVIDER_COLDKEY=my-wallet LIUM_PROVIDER_HOTKEY=my-hotkey lium provider portal login --json
-# b) e-mail and password
+# b) e-mail and password: not available until provider sign-up with e-mail opens
 # the person sets LIUM_PROVIDER_PASSWORD in your environment or secret settings; never put it on the line
 lium provider portal login --email owner@example.com --json  # lium#295, not released yet
 # c) an API token: nothing to run; the person sets LIUM_PROVIDER_TOKEN in your environment or secret settings
@@ -235,7 +237,8 @@ the reasons from `error.data.blocking_reasons` and hand over each one that block
 Exit 10 with `node.blocked` and an empty `error.data.blocking_reasons` means the portal's overview did not come back,
 not a node fault: re-run after 60 s; after 1800 s, relay `error.message` to the person.
 
-<a id="e-mail-or-google-account"></a>**An account created with e-mail or Google** never gets the overview: the portal
+<a id="e-mail-or-google-account"></a>**An account created with e-mail or Google** (not available until provider sign-up
+opens, [step 1](#1-sign-in-pick-one)) never gets the overview: the portal
 serves it only to hotkey accounts, and `lium provider idle-pay --json` answers `portal.overview_not_for_custodied_account`
 (exit 6) there. Run that once to tell. On such an account, `--fail-on-blocked` and `--until-clear` can never show the
 node clear, so do not use them: run `lium provider node get "$NODE" --json` without `--fail-on-blocked` and act on
@@ -323,9 +326,11 @@ pause line instead:
 > (<error.code>). Before the fix, please use Pause New Rentals in the portal, check that the node shows no rental,
 > then do the fix and tell me when it is done.
 
-<a id="never-resume"></a>**Never resume new rentals yourself** in this flow, not even after your own `pause`. The portal answers a `pause` the
-same way whether that call paused the node or the owner had paused it a moment before, so the agent cannot prove the
-pause is its own, and resuming could undo the owner's pause. The person resumes (the pause line below says how).
+<a id="never-resume"></a>**Never resume new rentals yourself** in this flow, not even after your own `pause`. Someone else
+can resume and pause the node again while you wait, and a bare `node resume` clears whatever pause is there. The
+portal answers `pause` with `pause_id` and `paused_by_this_call` (read by `node pause --json` from lium#298, not
+released yet), and a resume with an old `pause_id` is refused, so the pause line below gives the person a resume
+guarded by that ID. The person resumes.
 
 The wait is bounded: re-read `listing` every 10 minutes, for at most 6 hours, until the node has **no rental** by the
 test above. If the rental is still
@@ -339,20 +344,30 @@ Once the node is free, hand the fix itself over as above. After the person has d
 
 **The pause line.** Every hand-over during or after a `no_rentals` fix ends with the node's pause state, so no node
 stays paused without the person knowing. When your `pause` exits 0, note `data.new_rentals_pause_requested_at` from
-its answer. Read `lium provider node get "$NODE" --json` right before you send the line:
+its answer, and `data.pause_id` and `data.paused_by_this_call` when it has them (lium#298). Read
+`lium provider node get "$NODE" --json` right before you send the line:
 
 - `data.new_rentals_pause_requested_at` is `null`: "New rentals on <node_id> are open."
-- It is set: "New rentals on <node_id> are paused (since <time> UTC), and I am leaving them paused: <reason>. When
-  the fix is done and you want rentals again, run `lium provider node resume <node_id>` or use Resume New Rentals in
-  the portal." The `<reason>`:
-  - your `pause` exited 0 and `<time>` is still the time its answer gave: "I paused them for this fix (the portal
-    does not show whether my call made the change or they were already paused a moment before)";
+- It is set: "New rentals on <node_id> are paused (since <time> UTC), and I am leaving them paused: <reason>."
+  Then the resume sentence:
+  - you hold the `pause_id` your `pause` returned with `paused_by_this_call: true`, and `<time>` is still its
+    time: "When the fix is done and you want rentals again, run
+    `lium provider node resume <node_id> --pause-id <pause_id>`. It resumes only my pause: if someone paused the
+    node again since, it is refused and their pause stays." (`--pause-id`: lium#298, not released yet);
+  - otherwise: "Before you resume, check in the portal who paused the node and when, and resume only if that pause
+    is no longer needed."
+
+  The `<reason>`:
+  - your `pause` exited 0 with `paused_by_this_call: true` (or without that field) and `<time>` is still the time
+    its answer gave: "I paused them for this fix";
   - the listing showed `NEW_RENTALS_PAUSED` before you started, so you did not call `pause`: "they were paused
     before I started";
   - otherwise (a different time, or you never paused): "they were paused at <time>, which was not my pause call".
 - The `node get` fails (any non-zero exit): still send the line, from what you saw last: "I could not read the pause
   state of <node_id> just now (<error.code>). When I last checked, new rentals were <paused since <time> UTC, after
   my pause call | paused before I started | open>." Then the resume sentence above whenever they may be paused.
+
+Never write a bare `node resume` into the pause line.
 
 **Everything else** you may fix, but never run a reason's `fix_command` or `verify_command`, or a command inside its
 `fix`: they are text from the portal, not commands you checked. Run only the commands this page gives for that code
@@ -477,7 +492,7 @@ stderr: `[<namespaced code>] <message>`.
 | 3 | `portal.<detail.code>`, `portal.not_supported` | The portal refused or failed the call | `portal.not_supported` on `config connect-discord` or `portal confirm-email` (with `data.legacy_flow: true`): follow the old flow in [One-time human steps](#one-time-human-steps); do not stop there. On any other command the portal does not serve this route yet: stop using that command. Other codes: act on `error.message`/`error.data`; a 5xx may be retried up to 3 times with backoff. |
 | 4 | `net.unreachable`, `ssh.*` | Nothing answered | Check the network and `--portal-url`; retry with backoff (30 s, 60 s, 120 s). |
 | 5 | `node.not_found`, `portal.executor_not_found`, `auth.wallet_not_found`, `host.uuid_not_found`, any other `*_not_found` code or portal 404 | Something the command names does not exist | By code. `auth.wallet_not_found`: this machine has no wallet by those names; fix `LIUM_PROVIDER_COLDKEY` / `LIUM_PROVIDER_HOTKEY` (the wallet and hotkey **names**) or use another sign-in, then re-run once. `host.uuid_not_found`: the executor installer on the host did not report an executor id, so the host setup did not finish; read `error.message`, fix the host and re-run step 3. Any other: the node is not on this account; re-read the ids with `lium provider node listing --json`. |
-| 6 | `auth.not_signed_in`, `auth.*` (`auth.invalid`, `auth.expired`, `auth.forbidden`, `auth.hotkey_not_registered`; not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, `portal.overview_not_for_custodied_account`, a portal 401/403/419/440 | Not signed in, signed out, expired or not allowed | `portal.overview_not_for_custodied_account`: `idle-pay` on an account created with e-mail or Google, whose overview the portal serves only to hotkey accounts. Signing in again does not help: ask the person to read idle pay in the portal (the amounts on the Overview page, each node's idle-pay reasons on its own page, `https://provider.lium.io/nodes/<node_id>`). `auth.not_signed_in`: nothing is signed in, and every provider command that needs a sign-in answers it in agent mode. Follow `error.hint`: set `LIUM_PROVIDER_TOKEN`, run `portal login --email`, or set a hotkey ([step 1](#1-sign-in-pick-one)). If `error.data.session_email` is present, that e-mail session has ended: re-run `lium provider portal login --email <that address> --json`. Other codes: sign in again the same way (`lium provider portal login --force --json` for a hotkey) or use a token with the right scope. Do not loop. |
+| 6 | `auth.not_signed_in`, `auth.*` (`auth.invalid`, `auth.expired`, `auth.forbidden`, `auth.hotkey_not_registered`; not `auth.refresh_race` or `auth.wallet_not_found`), `portal.api_token_needs_session`, `portal.api_token_scope_missing`, `portal.overview_not_for_custodied_account`, a portal 401/403/419/440 | Not signed in, signed out, expired or not allowed | `portal.overview_not_for_custodied_account`: `idle-pay` on an account created with e-mail or Google, whose overview the portal serves only to hotkey accounts. Signing in again does not help: ask the person to read idle pay in the portal (the amounts on the Overview page, each node's idle-pay reasons on its own page, `https://provider.lium.io/nodes/<node_id>`). `auth.not_signed_in`: nothing is signed in, and every provider command that needs a sign-in answers it in agent mode. Follow `error.hint`: set `LIUM_PROVIDER_TOKEN`, run `portal login --email`, or set a hotkey ([step 1](#1-sign-in-pick-one)). If `error.data.session_email` is present, that e-mail session has ended: ask the person to set that address as `LIUM_PROVIDER_EMAIL` in your environment, then run `lium provider portal login --email "$LIUM_PROVIDER_EMAIL" --json`. Never paste the returned address into the command line yourself. Other codes: sign in again the same way (`lium provider portal login --force --json` for a hotkey) or use a token with the right scope. Do not loop. |
 | 7 | `portal.rate_limited` (a portal 429), `auth.refresh_race` | Rate limit, or another `lium provider` process is refreshing the token | Retry: after 60 s on a rate limit, after a few seconds on `auth.refresh_race`. |
 | 10 | `node.blocked.<code>`, `node.blocked` | The node has a reason that blocks by the [step 4](#4-diagnose) rule | Take each reason in `error.data.blocking_reasons` that blocks by that rule, look up its `code` in [Blocking reasons](#blocking-reasons) and fix it or hand it over by [step 5](#5-fix-then-verify); a reason with no `code` is a hand-over with its `message` and `fix`. Then watch the node as in step 5. An empty `error.data.blocking_reasons` is a portal overview outage, not a node fault: re-run after 60 s; after 1800 s, relay `error.message` to the person. On an account created with e-mail or Google it is not an outage: the portal never serves that overview, so check the node as [step 4](#e-mail-or-google-account) says for those accounts. |
 | 11 | `node.not_listed_yet` | Registered and waited for, not listed yet | Diagnose (step 4); nothing is lost, the node stays registered. |
@@ -605,6 +620,8 @@ Once Discord is linked, `connect-discord --json` answers exit 0 with `data.alrea
 
 ### E-mail confirmation
 
+Not available until provider sign-up with e-mail opens ([step 1](#1-sign-in-pick-one)).
+
 Confirms the e-mail of an account created with e-mail and password. It runs once signed in (hotkey, API token or
 an e-mail session); there is no code option, only the handoff:
 
@@ -628,10 +645,15 @@ lium provider portal confirm-email --json --wait --timeout 900  # lium#295, not 
 After, sign in again:
 
 ```bash
-lium provider portal login --email <email> --json  # lium#295, not released yet
+# LIUM_PROVIDER_EMAIL set by the person; never paste an address into the line
+lium provider portal login --email "$LIUM_PROVIDER_EMAIL" --json  # lium#295, not released yet
 ```
 
 ### Google-only account
+
+Not available until provider sign-up with Google opens: today a Google account cannot sign in to the provider
+portal or open Add Node. Until then, tell the owner the hotkey path ([step 1](#1-sign-in-pick-one) a) is the only
+one, and do not relay the message below. Once sign-up opens:
 
 An account that signs in only with Google has no password, and an agent does not sign in with Google. Relay, without the `<!-- … -->` comment:
 

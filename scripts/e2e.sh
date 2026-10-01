@@ -3,7 +3,7 @@
 #   1. the checker's negative control passes (scripts/test_check_cli_examples.py: planted stale lines, incl. on
 #      `lium mine`, are reported), then every `lium …` command line in SKILL.md, references/, README and llms.txt parses
 #      against the released CLI (subcommand exists, every --flag accepted; upcoming flags allow-listed in
-#      .cli-upcoming.txt with their PR);
+#      .cli-upcoming.txt with their PR), and the provider guide's pause line resumes only with --pause-id;
 #   2. agents/install.sh installs THIS checkout (served locally) into a throwaway HOME for Claude Code, Cursor and Codex,
 #      and what it installed is byte-identical to the repo; a 404 for provider.md from a ref whose SKILL.md does not
 #      link it skips it with a warning (exit 0) and moves an earlier provider.md aside, and a 500, a body cut short, a
@@ -19,7 +19,23 @@ FAILED=""
 step() { local name=$1; shift; echo "::group::$name"; "$@"; local rc=$?; echo "::endgroup::"; echo "e2e: $name $([ $rc -eq 0 ] && echo pass || echo FAIL)"; [ $rc -eq 0 ] || FAILED="$FAILED $name"; }
 
 check_commands() {
-  python3 scripts/test_check_cli_examples.py && python3 scripts/check-cli-examples.py --allow .cli-upcoming.txt lium README.md llms.txt
+  python3 scripts/test_check_cli_examples.py && python3 scripts/check-cli-examples.py --allow .cli-upcoming.txt lium README.md llms.txt \
+    && pause_line_resume_is_guarded
+}
+
+# The pause line hands the person a resume guarded by the agent's own pause id: a bare `node resume` there would clear
+# a pause someone else set while the agent waited.
+pause_line_resume_is_guarded() {
+  python3 - lium/references/provider.md <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+start = text.index("**The pause line.**")
+block = text[start:text.index("**Everything else**", start)]
+commands = re.findall(r"lium provider node resume[^`]*", block)
+bare = [c for c in commands if "--pause-id" not in c]
+assert commands and not bare, "pause line: resume commands %r, bare %r" % (commands, bare)
+print("pause line: %d resume command(s), all with --pause-id" % len(commands))
+PY
 }
 
 install_sh() {
