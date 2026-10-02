@@ -296,7 +296,11 @@ Read two things from that row:
 
 - **Has a rental**: `data.rented_gpu_count` is above 0 (a partly rented node whose free GPUs are still offered reads
   `listing_state: "listed"`), or `data.listing_state` is `rented`, whatever the count says (`0` or `null`).
-  Otherwise the node has **no rental**.
+  Otherwise read the node's pods too (`lium provider node pods "$NODE" --json`): any row in `data`, a `PENDING`
+  one included, counts as **has a rental**. A pending pod has no GPU assigned yet, so the listing reads
+  `rented_gpu_count: 0` while that pod may still start. Only with no listed rental and no pod does the node have
+  **no rental**, and that holds only for the moment you read it: tell the person to run `node pods` again right
+  before the host work.
 - **Already paused**: `data.hidden_reasons` has an entry with `code` `NEW_RENTALS_PAUSED`. The portal lists it
   whenever new rentals are paused on the node, rented or not. `lium provider node get "$NODE" --json` shows the
   same fact as `data.new_rentals_pause_requested_at` (`null` while new rentals are taken).
@@ -530,7 +534,10 @@ shows what comes with each code. It names what the fix needs: `sudo` (root on th
 | `miner_default_job` | The node runs the owner's own default job | none | Ask the owner first: it is their job. Stop it on the host only once they agree. |
 | `provider_discord_not_connected` | No Discord linked: no idle pay, no subnet incentive | none (a human step) | [Discord linking](#discord-linking), then `lium provider config show --json` shows `data.discord_connected: true`. |
 | `new_rentals_paused` | New rentals are paused on this node (the owner's choice; not gating) | none | Only when the owner asks for it: `lium provider node resume "$NODE" --json --yes` ([never resume](#never-resume)). |
-| `spot_tier` | Spot-tier nodes earn no subnet incentive (not gating) | none | Only if the owner wants it: [step 6](#6-list-on-secure-coming-with-the-next-cli-release). |
+| `spot_tier` | Spot-tier nodes earn no subnet incentive (not gating). Once validators turn on Spot-node pay, an idle Spot node the owner chose runs Lium fillers instead and is paid up to 0.95 x its GPU configuration's average filler revenue; the three codes below say why such a node is not paid | none | Only if the owner wants it: [step 6](#6-list-on-secure-coming-with-the-next-cli-release). |
+| `spot_without_lium_filler` | An idle Spot node runs no Lium filler, so Spot-node pay skips it | none | No action needed: the filler starts from Lium's side. If it stays, hand over with its `message`. |
+| `spot_no_filler_revenue_for_gpu_config` | No average filler revenue yet for this GPU configuration | none | No action: pay starts once Lium has enough filler history for the configuration. |
+| `spot_no_headroom_at_burn_cap` | No room left in the incentive pool this cycle: the rental share is at the burn cap | none | No action: rentals still pay, and room opens as the market moves. |
 | `banned_network_abuse` | The node is banned for network abuse | none (a human step) | Human step: the owner contacts Lium support. Do not retry. |
 | `gpu_model_not_eligible_for_unrented_incentive` | This GPU model is not in the idle-pay program (`gating: false`) | none | No action: the model earns from rentals only. |
 | `no_unrented_capacity_for_gpu_count` | No idle-pay room for this node size this cycle (`gating: false`) | none | No action: rentals still pay, and room opens as the market moves. |
