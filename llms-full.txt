@@ -2627,9 +2627,10 @@ Read two things from that row:
 
 - **Has a rental**: `data.rented_gpu_count` is above 0 (a partly rented node whose free GPUs are still offered reads
   `listing_state: "listed"`), or `data.listing_state` is `rented`, whatever the count says (`0` or `null`).
-  Otherwise read the node's pods too (`lium provider node pods "$NODE" --json`): any row in `data`, a `PENDING`
-  one included, counts as **has a rental**. A pending pod has no GPU assigned yet, so the listing reads
-  `rented_gpu_count: 0` while that pod may still start. Only with no listed rental and no pod does the node have
+  Otherwise read the node's pods too (`lium provider node pods "$NODE" --json`): any row in `data` whose status is
+  not `CREATION_FAILED`, a `PENDING` one included, counts as **has a rental**. A pending pod has no GPU assigned yet,
+  so the listing reads `rented_gpu_count: 0` while that pod may still start. A `CREATION_FAILED` row never ran and
+  is cleaned up a few minutes later, so it is not a rental. Only with no listed rental and no other pod does the node have
   **no rental**, and that holds only for the moment you read it: tell the person to run `node pods` again right
   before the host work.
 - **Already paused**: `data.hidden_reasons` has an entry with `code` `NEW_RENTALS_PAUSED`. The portal lists it
