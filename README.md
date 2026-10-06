@@ -1,7 +1,7 @@
 # lium-skill
 
 The `lium` agent skill — teaches an AI coding agent to rent GPUs and manage pods
-on [Lium](https://lium.io), agent-first compute: a decentralized GPU rental platform on Bittensor.
+on [Lium](https://lium.io), agent-first compute: a GPU rental platform.
 
 ## Install
 
@@ -42,6 +42,7 @@ lium init
 | `llms-full.txt` | Self-contained reference, generated from the files above |
 | `scripts/build-llms-full.sh` | Generates `llms-full.txt` (SKILL.md without frontmatter + both references) |
 | `examples/benchmarks/` | Reproducible GPU benchmarks run on Lium pods, with raw results ([vLLM serving, 23 Sep 2026](examples/benchmarks/vllm-2026-09-23/)) |
+| `server.json` | [MCP Registry](https://registry.modelcontextprotocol.io) entry for the docs MCP endpoint `https://docs.lium.io/mcp`; a change on `main` publishes it (bump `version`) |
 | `.github/CODEOWNERS`, `.github/REVIEWING.md` | Who reviews each path and how |
 
 `lium.io/llms.txt` and `lium.io/llms-full.txt` are served from this repo's `main`.
@@ -50,7 +51,7 @@ lium init
 
 `llms-full.txt` is generated. After changing `lium/SKILL.md` or anything under
 `lium/references/`, regenerate and commit it in the same change — the
-`check-drift` job (`.github/workflows/check-llms-full.yml`, the only CI here)
+`check-drift` job (`.github/workflows/check-llms-full.yml`)
 regenerates the file on every PR, push to `main` and merge-queue run and fails
 on any difference:
 
@@ -63,3 +64,7 @@ on any difference:
 - Docs: https://docs.lium.io
 - CLI: https://github.com/Datura-ai/lium
 - PyPI: https://pypi.org/project/lium.io/
+
+## License
+
+MIT, the same license as the [Lium CLI](https://github.com/Datura-ai/lium). See [LICENSE](LICENSE).
