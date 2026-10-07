@@ -84,7 +84,7 @@ retrying yourself.
 | `ps()` | `list[PodInfo]` | Your pods. `executor.price_per_hour` is the pod's billed $/h. |
 | `pod(pod_id)` | `dict` | Raw `GET /pods/{id}` payload (template, executor, ports, status…). |
 | `templates(filter=None, only_my=False)` | `list[Template]` | Substring match on image or name. Objects carry `.id`. |
-| `get_template(template_id)` | `Template \| None` | `GET /templates/{id}`; swallows errors and returns `None`. |
+| `get_template(template_id)` | `Template \| None` | Takes an ID, HUID or name. A UUID is fetched with `GET /templates/{id}`; if that is 404 it falls back to your own templates whose name is that UUID. A HUID or name matches the full listing and raises `LiumError` when more than one template matches (use the ID). `None` when nothing matches; other errors, including a refused key, raise. |
 | `get_template_by_image_name(image_name, image_tag)` | `Template \| None` | Exact image + tag match. |
 | `default_docker_template(executor_id)` | `Template` | The PyTorch template the node's driver supports; what `lium up` uses without `-t`. |
 | `get_deployment_estimate(executor_id, template_id)` | `dict` | `estimated_seconds`, `is_slow_machine`, `warning_message`, `is_cached_template`, `docker_image_size`. |
@@ -144,7 +144,7 @@ call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_p
 |--------|-------|
 | `create_template(name, docker_image, docker_image_digest="", docker_image_tag="latest", ports=None, start_command=None, **kwargs)` | Positional-friendly. kwargs: `category` (default `"UBUNTU"`), `is_private` (`True`), `volumes` (`["/workspace"]`), `description`, `environment`, `entrypoint`, `one_time_template`, `readme`. Image must be Debian/Ubuntu-based (verification installs `openssh-server` with apt). |
 | `update_template(template_id, name, docker_image, docker_image_digest, docker_image_tag="latest", ports=None, start_command=None, **kwargs)` | Only your own templates; triggers re-verification. |
-| `wait_template_ready(template_id, timeout=300)` | `Template` on `VERIFY_SUCCESS`, `None` on timeout, raises `LiumError` on `VERIFY_FAILED`. |
+| `wait_template_ready(template_id, timeout=300)` | `Template` on `VERIFY_SUCCESS` (or `CREATED`/`UPDATED`, which is all a public template ever shows), `None` on timeout, raises `LiumError` on `VERIFY_FAILED`. |
 | `volumes()`, `volume(volume_id)`, `volume_create(name, *, description="")`, `volume_update(volume_id, *, name=None, description=None)`, `volume_delete(volume_id)` | `VolumeInfo` objects. |
 | `backup_create(pod, *, path, frequency_hours=6, retention_days=7)` | `path` is required; warns when it equals the whole volume. |
 | `backup_now(pod, *, name, description="")` | Immediate backup. |
