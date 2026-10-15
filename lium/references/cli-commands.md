@@ -863,7 +863,7 @@ The account's charges as the ledger recorded them.
 
 ```bash
 lium billing history                  # every pod charged, removed ones included
-lium billing history --key agent-1    # what one API key's pods cost
+lium billing history --key agent-1    # one API key's pods; not on lium.io yet: there it is the whole account (api_key_filter.applied=false)
 ```
 
 ## lium request
