@@ -920,6 +920,9 @@ lium --workspace research ps         # one command in another workspace (its key
 Sub-commands: `list`, `members`, `create`, `invite`, `remove`, `transfer-billing`, `use`,
 `login`, `delete`.
 
+Needs server support: workspaces are **not switched on at lium.io yet** (2026-10-15 — `GET /users/me`
+carries no `workspace`); until they are, every account is its own single workspace.
+
 ## lium keys
 
 API keys, per workspace, with scopes and USD budgets (day, month, lifetime). Needs
@@ -937,6 +940,10 @@ lium keys create ci --workspace research --save    # a key for that workspace, s
 ```
 
 Sub-commands: `list`, `create`, `show`, `budget`, `scopes`.
+
+Needs server support: managing keys needs a workspace session, and per-key budgets
+(`--daily-budget` / `--monthly-budget` / `--max-budget`) are **not on lium.io yet** (2026-10-15): there
+the CLI refuses to create a budgeted key (exit `2`) unless `--allow-unbudgeted` is passed.
 
 ## lium completion
 

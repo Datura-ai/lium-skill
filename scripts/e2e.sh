@@ -9,7 +9,8 @@
 #   3. the first command the skill tells an agent to run, `lium ls --format json`, answers from the public feed with
 #      the fields the skill names (the feed is public by design; the CLI only needs some key string set).
 # Needs: python3, the `lium` CLI on PATH (CI: `uv tool install lium.io`), network; step 3 uses GNU `timeout` when
-# present (coreutils; `gtimeout` from Homebrew on a Mac) and runs unbounded without it. Exit 0 only when all three pass.
+# present (coreutils; `gtimeout` from Homebrew on a Mac) and runs unbounded without it. Exit 0 only when all pass; 1b. scripts/check-cli-coverage.py: every `lium --help` command has a reference section and
+# SKILL.md's "Covers lium CLI and SDK X" line names the released version.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 FAILED=""
@@ -18,6 +19,9 @@ step() { local name=$1; shift; echo "::group::$name"; "$@"; local rc=$?; echo ":
 check_commands() {
   python3 scripts/test_check_cli_examples.py && python3 scripts/check-cli-examples.py --allow .cli-upcoming.txt lium README.md llms.txt
 }
+
+# a CLI release with a new command or version fails here until the reference catches up
+cli_coverage() { python3 scripts/check-cli-coverage.py; }
 
 install_sh() {
   local home port pid
@@ -57,6 +61,7 @@ PY
 }
 
 step check-commands check_commands
+step cli-coverage cli_coverage
 step install-sh install_sh
 step ls-json ls_json
 [ -z "$FAILED" ] && echo "skill e2e: PASS" || { echo "skill e2e: FAIL ($FAILED)"; exit 1; }

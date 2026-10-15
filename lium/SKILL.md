@@ -13,6 +13,8 @@ Lium — agent-first compute: a GPU rental platform. Pods are Docker containers 
 - **Docs**: https://docs.lium.io
 - **Dashboard**: https://lium.io
 
+> **Covers lium CLI and SDK 0.16.1** (released 2026-10-14) · **last updated 2026-10-15**. Older installs: `pip install -U lium.io`, and check yours with `lium --version`.
+
 ## Quick Install
 
 Standalone binary — no Python or dependencies required:
@@ -371,6 +373,18 @@ lium fund -w default -a 10.0 -y   # fund 10 TAO, skip confirmation
 
 User must have a verified TAO wallet at https://lium.io/billing.
 
+No TAO? Two paths that need no browser on your side *(0.16.1)*:
+
+```bash
+lium topup create -a 20 -c USDT -n tron --json     # stablecoin: send exactly crypto_amount to deposit_address
+lium topup link -a 10 --wait 900 --json            # card: hand the printed Stripe Checkout url to a person; waits for the credit
+lium topup wait --above 0 --timeout 900 --json     # resume waiting (exit 3 credit_not_seen on time-out)
+```
+
+`topup link` needs a key with the `billing` scope (`LIUM_BILLING_API_KEY`, or
+`lium signup --billing-key`). `lium topup card` (charge a saved card, no browser) is
+behind a platform switch that is off on lium.io — do not plan on it.
+
 ### Agent Gotchas / Known Pitfalls
 
 #### After Install — Export PATH
@@ -432,17 +446,15 @@ lium rm my-pod         # without a terminal: names the pod, exits 2, removes not
 - To use specific template: `lium up --gpu H100 -t <TEMPLATE_ID> -y`
 - To use custom Docker image: `lium up --gpu H100 --image pytorch/pytorch:2.0 -y`
 
-#### No User Identity Command
+#### Which Key Am I Using — `lium whoami`
 
-lium CLI has no renter-side identity command — no `whoami` for your API key.
-(`lium provider portal whoami` exists, but it reports the *provider* portal session,
-not the API key you rent with.)
-
-To check the key, run `lium balance`: it prints a balance when the key works and,
-since 0.0.31, exits `3` with an error when the key is bad or revoked. Do **not** use
-`lium ls` for this: the node list is public, so it succeeds (exit `0`) with any key.
-Releases before 0.0.31 exited `0` on most failures — pin `lium>=0.0.31` when a script
-branches on `$?`.
+`lium whoami` *(0.16.1)* prints the API key in use (fingerprint and where it came from:
+`LIUM_API_KEY` or `~/.lium/config.ini`), the account, the balance, the SSH key and the CLI
+version — run it first when a command answers 401, or acts on the wrong account
+(`lium whoami --json | jq .account_id`). On older CLIs there is no renter-side `whoami`
+(`lium provider portal whoami` is the *provider* portal session); there, run `lium balance`:
+it prints a balance when the key works and, since 0.0.31, exits `3` when the key is bad or
+revoked. Do **not** use `lium ls` for this: the node list is public, so it succeeds with any key.
 
 #### Long-Running Commands Over SSH
 
@@ -651,6 +663,35 @@ output with `--json | jq -r '.results[0].stdout'`; the human format prints an
 newline: strip it (`tr -d '[:space:]'`, or `grep -c` as above) before comparing
 it or feeding it to `jq`'s `tonumber`, which rejects `"8\n"`.
 
+### Agent Safety Rails *(0.16.1)*
+
+Four habits that keep an unattended agent from overspending or stalling:
+
+1. **Cap what the agent can spend.** The account is prepaid, so the balance is the hard ceiling:
+   fund only what the task needs. Per-key budgets (`lium keys create agent-1 --daily-budget 20`,
+   SDK `LiumBudgetExceededError`) are in the CLI but **not switched on at lium.io yet** (2026-10-15):
+   there the CLI refuses to create a budgeted key (exit `2`) unless `--allow-unbudgeted`.
+   `lium billing history` / SDK `billing_statement()` show what the ledger charged, removed pods included.
+2. **A deadline on every pod**: `lium up --gpu H100 --budget 12.50 --ttl 6h` — the earlier of the two
+   removes it. SDK: `with lium.rental(executor_id=…, name=…) as pod:` removes the pod however the
+   block ends; `lium.cap_spend(pod, budget_usd=12.5)` schedules removal at that spend.
+3. **Wait for the service, not just the pod**: `wait_ready(pod, ready_port=8000)` returns only when
+   the port answers inside the pod (a vLLM template is RUNNING minutes before it serves).
+4. **Sold out?** `lium request B300 -n 8` notifies the providers who list that GPU instead of
+   polling `lium ls` in a loop; `lium spend` shows burn per hour and runway.
+
+**Error → what to do** (CLI exit code / SDK exception):
+
+| Exit | SDK | Meaning | Do |
+|------|-----|---------|----|
+| `3` (401) | `LiumAuthError` | bad or revoked key | `lium whoami`; fix `LIUM_API_KEY` — do not retry |
+| `6` | `LiumInsufficientBalanceError` (`.required`, `.available`) | balance too low | fund (Non-Interactive Funding), then retry once |
+| `6` | `LiumBudgetExceededError` (`.window`) | the key's own budget hit (once per-key budgets are live) | stop; a human raises it (`lium keys budget`) |
+| `6` | `LiumScopeError` (`.scope`) | key lacks a scope (`rent`, `billing` …) | use a key with that scope; funds will not help |
+| `3` (429/5xx) | `LiumRateLimitError` / `LiumServerError` | transient | reads are already retried 3×; for a rent check `lium ps` for your pod **name** before re-sending |
+| — | `PodStartError` (`.cause`) | pod failed to start | `lium rm` it, rent another node |
+| — | `ClusterNotListedError` | cluster rent may have gone through | `lium clusters ps` before any retry |
+
 ### Verify What You Paid For
 
 Two failure modes were seen repeatedly on 4- and 8-GPU rentals: the platform
@@ -790,14 +831,14 @@ bill grows.
 
 ### Only What the Released CLI Has
 
-This skill describes the released CLI, 0.0.37 as the baseline, with later releases marked where they differ, and nothing that is not released;
+This skill describes the released CLI, 0.0.37 as the baseline, with later releases marked where they differ (*(0.16.1)* = present in 0.16.1, the current release), and nothing that is not released;
 probe with `lium <cmd> --help` before relying on a flag you do not see here.
 
 - GPU count: `lium up --verify-gpus --strict-gpus` is the built-in check; `nvidia-smi -L` inside the pod against `gpu_count` from `lium ps --format json` is the evidence you keep.
-- Detach long jobs by hand: `nohup setsid ... > log 2>&1 < /dev/null &` through `lium exec`.
+- Detach long jobs: `lium exec <pod> --detach "python train.py"` *(0.16.1; prints PID and log path)*, SDK `run_background()`; on older CLIs by hand: `nohup setsid ... > log 2>&1 < /dev/null &` through `lium exec`.
 - Template ids: `curl .../api/templates` or `Lium().templates()`.
 - Machine-readable output: `--format json` on `ps`/`ls`, `--json` on `balance`/`exec`/`describe`/`audit`. `lium ps --format json` carries `ssh_command` ready to run, next to the `ssh_cmd` the one-liners above parse.
-- A bad or revoked key exits `3` — prove the key with `lium balance` (see No User Identity Command). A 403 on rent exits `6` and means Insufficient balance, not a bad key (see Before the First Rental — Balance).
+- A bad or revoked key exits `3` — prove the key with `lium whoami` (or `lium balance` on older CLIs; see Which Key Am I Using). A 403 on rent exits `6` and means Insufficient balance, not a bad key (see Before the First Rental — Balance).
 - Never wait for a prompt: pass `-y`, `--no-ssh` and every argument up front.
 - SDK: see the SDK reference's agent recipe for `up` → `wait_ready` → `exec` → `down`.
 
