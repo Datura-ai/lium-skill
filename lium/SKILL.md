@@ -382,8 +382,7 @@ lium topup wait --above 0 --timeout 900 --json     # resume waiting (exit 3 cred
 ```
 
 `topup link` needs a key with the `billing` scope (`LIUM_BILLING_API_KEY`, or
-`lium signup --billing-key`). `lium topup card` (charge a saved card, no browser) is
-behind a platform switch that is off on lium.io — do not plan on it.
+`lium signup --billing-key`).
 
 ### Agent Gotchas / Known Pitfalls
 
@@ -432,7 +431,7 @@ take `-y, --yes`. A piped `yes` is not approval — always pass `-y`:
 ```bash
 lium rm my-pod -y      # non-interactive
 lium rm -a -y          # remove all pods non-interactively
-lium rm my-pod         # without a terminal: names the pod, exits 2, removes nothing (lium#246, not released)
+lium rm my-pod         # without a terminal: names the pod, exits 2, removes nothing
 ```
 
 #### Templates
@@ -476,7 +475,7 @@ lium exec my-pod "kill -0 <PID> && echo running || echo finished"
 
 `lium logs my-pod --follow` streams the container's PID 1 output only — it does
 not show processes you started via `exec` unless they write to `/proc/1/fd/1`.
-An `exec --detach` flag that does this for you is proposed (lium#211, not released).
+`lium exec my-pod --detach "python train.py"` *(0.16.1)* does this for you and prints the PID and log path.
 
 #### Stopping a Remote Job — Never `pkill -f` From a One-Liner
 
@@ -668,9 +667,12 @@ it or feeding it to `jq`'s `tonumber`, which rejects `"8\n"`.
 Four habits that keep an unattended agent from overspending or stalling:
 
 1. **Cap what the agent can spend.** The account is prepaid, so the balance is the hard ceiling:
-   fund only what the task needs. Per-key budgets (`lium keys create agent-1 --daily-budget 20`,
-   SDK `LiumBudgetExceededError`) are in the CLI but **not switched on at lium.io yet** (2026-10-15):
-   there the CLI refuses to create a budgeted key (exit `2`) unless `--allow-unbudgeted`.
+   fund only what the task needs. Give the agent its own key with a budget: `POST /keys` with the
+   signed-in token (`Authorization: Bearer $TOKEN`, see signup above) and
+   `{"name":"agent-1","scopes":["read","rent","manage"],"daily_budget_usd":20}`
+   (`monthly_budget_usd`, `max_budget_usd`, `pod_visibility` `own`|`account` also accepted; scopes are
+   listed by `GET /keys/scopes`). At the budget the key's pods are deleted and rents answer
+   402 `API_KEY_BUDGET_EXCEEDED`; `PATCH /keys/{id}` changes the budget.
    `lium billing history` / SDK `billing_statement()` show what the ledger charged, removed pods included.
 2. **A deadline on every pod**: `lium up --gpu H100 --budget 12.50 --ttl 6h` — the earlier of the two
    removes it. SDK: `with lium.rental(executor_id=…, name=…) as pod:` removes the pod however the
@@ -686,7 +688,7 @@ Four habits that keep an unattended agent from overspending or stalling:
 |------|-----|---------|----|
 | `3` (401) | `LiumAuthError` | bad or revoked key | `lium whoami`; fix `LIUM_API_KEY` — do not retry |
 | `6` | `LiumInsufficientBalanceError` (`.required`, `.available`) | balance too low | fund (Non-Interactive Funding), then retry once |
-| `6` | `LiumBudgetExceededError` (`.window`) | the key's own budget hit (once per-key budgets are live) | stop; a human raises it (`lium keys budget`) |
+| `6` | `LiumBudgetExceededError` (`.window`) | the key's own budget hit | stop; a human raises it (`PATCH /keys/{id}`) |
 | `6` | `LiumScopeError` (`.scope`) | key lacks a scope (`rent`, `billing` …) | use a key with that scope; funds will not help |
 | `3` (429/5xx) | `LiumRateLimitError` / `LiumServerError` | transient | reads are already retried 3×; for a rent check `lium ps` for your pod **name** before re-sending |
 | — | `PodStartError` (`.cause`) | pod failed to start | `lium rm` it, rent another node |

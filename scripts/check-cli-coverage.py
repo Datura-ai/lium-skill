@@ -13,7 +13,10 @@ version = subprocess.run([lium, "--version"], capture_output=True, text=True, ch
 
 ref = open("lium/references/cli-commands.md").read()
 skill = open("lium/SKILL.md").read()
-missing = [c for c in commands if not re.search(rf"^## lium {re.escape(c)}\b", ref, re.M)]
+# In the CLI but switched off on lium.io (workspaces login answers "not enabled"; keys need a workspace session):
+# the reference documents only what works there. Drop a name once lium.io serves it.
+NOT_ON_LIUM_IO = {"keys", "workspaces"}
+missing = [c for c in commands if c not in NOT_ON_LIUM_IO and not re.search(rf"^## lium {re.escape(c)}\b", ref, re.M)]
 covers = re.search(r"Covers lium CLI and SDK ([0-9][0-9.]*)", skill)
 
 problems = []

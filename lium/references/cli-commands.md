@@ -2,9 +2,7 @@
 
 Written against `lium --version` **0.0.37**. Every flag below appears in that
 binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
-`lium <command> --help` is the authority, not this file. The one exception is
-marked inline: an option or command tagged **(lium#NNN, not released)** is read
-off that open lium PR's `--help` and is not in the released binary yet.
+`lium <command> --help` is the authority, not this file.
 
 ## Table of Contents
 
@@ -44,8 +42,6 @@ off that open lium PR's `--help` and is not in the released binary yet.
 - [lium request](#lium-request)
 - [lium cp](#lium-cp)
 - [lium clusters](#lium-clusters)
-- [lium workspaces](#lium-workspaces)
-- [lium keys](#lium-keys)
 - [lium completion](#lium-completion)
 - [Batch Operations](#batch-operations)
 - [Pod Targeting](#pod-targeting)
@@ -453,7 +449,7 @@ lium exec 1 -e API_KEY=xyz "python app.py"
 lium exec 1 --json "python train.py"
 ```
 
-There is no `--timeout`, no `--detach` (lium#211, not released) and no `--output`
+There is no `--timeout`, no `--detach` (added in 0.16.1) and no `--output`
 in 0.0.37. `exec` waits
 for the remote command **and every child that still holds its stdout/stderr**, so
 a job started with a bare `&` keeps `exec` blocked. Detach it fully:
@@ -559,8 +555,7 @@ remove; cancel a scheduled one with [`lium schedules rm`](#lium-schedules).
 **Agent usage** — pass `-y` on every `rm`. Without a terminal on stdin (or with
 `LIUM_NONINTERACTIVE=1`) and without `-y`, the command names the pods it would
 have removed and the command to re-run, exits 2 (`confirmation_required`) and
-removes or schedules nothing; a piped `yes` is not approval (lium#246, not
-released; up to lium 0.0.41 a piped `lium rm my-pod` removed the pod).
+removes or schedules nothing; a piped `yes` is not approval (up to lium 0.0.41 a piped `lium rm my-pod` removed the pod).
 ```bash
 lium rm my-pod -y           # single pod
 lium rm -a -y               # all pods
@@ -863,7 +858,6 @@ The account's charges as the ledger recorded them.
 
 ```bash
 lium billing history                  # every pod charged, removed ones included
-lium billing history --key agent-1    # one API key's pods; not on lium.io yet: there it is the whole account (api_key_filter.applied=false)
 ```
 
 ## lium request
@@ -903,47 +897,6 @@ lium clusters ps                      # your clusters
 lium clusters show job --hostfile     # members, overlay IPs, mpirun hostfile
 lium clusters rm job -y               # remove every member
 ```
-
-## lium workspaces
-
-Teams: list the workspaces you belong to, pick one, manage members and billing. A key acts in
-exactly one workspace. Create / invite / remove / transfer / delete need a session from
-`lium workspaces login` (e-mail and password).
-
-```bash
-lium workspaces                      # the workspace this key acts in
-lium workspaces login                # sign in once for create / invite / remove / transfer / delete
-lium workspaces use research         # make 'research' the default for every command
-lium --workspace research ps         # one command in another workspace (its key must be configured)
-```
-
-Sub-commands: `list`, `members`, `create`, `invite`, `remove`, `transfer-billing`, `use`,
-`login`, `delete`.
-
-Needs server support: workspaces are **not switched on at lium.io yet** (2026-10-15 — `GET /users/me`
-carries no `workspace`); until they are, every account is its own single workspace.
-
-## lium keys
-
-API keys, per workspace, with scopes and USD budgets (day, month, lifetime). Needs
-`lium workspaces login` first (a key cannot manage keys). Without `--scope` a key gets read, rent
-and manage; `--scope billing` (money routes only) cannot be combined with another scope. When a
-budget is hit the server deletes the key's pods (data outside a volume is lost) and refuses rents
-through it with `API_KEY_BUDGET_EXCEEDED` (exit 6). The key is printed once.
-
-```bash
-lium keys                                          # the keys of the current workspace
-lium keys create agent-1 --scope read --scope rent --daily-budget 20
-lium keys show agent-1                             # what the key can do, its budget, its pods
-lium keys scopes                                   # every scope, in the server's words
-lium keys create ci --workspace research --save    # a key for that workspace, saved for --workspace
-```
-
-Sub-commands: `list`, `create`, `show`, `budget`, `scopes`.
-
-Needs server support: managing keys needs a workspace session, and per-key budgets
-(`--daily-budget` / `--monthly-budget` / `--max-budget`) are **not on lium.io yet** (2026-10-15): there
-the CLI refuses to create a budgeted key (exit `2`) unless `--allow-unbudgeted` is passed.
 
 ## lium completion
 

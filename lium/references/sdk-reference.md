@@ -186,11 +186,9 @@ call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_p
 | `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd, netuid=…)`, `company_wallet(app_id)`, `alpha_subnets()` | | TAO and alpha funding plumbing used by `lium fund`. |
 | `topup_checkout_link(amount_usd, success_url=None, cancel_url=None)` | `dict` | *(0.16.1)* A Stripe Checkout `url` for a **person** to pay by card (min $10); nothing is charged by the call. Needs a `billing`-scope key. |
 | `wait_for_credit(baseline, timeout=600)` | `dict` | *(0.16.1)* Poll until the balance rises above `baseline` (read `balance()` before paying): `{credited, balance, seconds}`. |
-| `topup_card(amount_usd, …)` | `dict` | *(0.16.1)* Saved-card charge with no browser — behind a platform switch that is **off** on lium.io; `LiumChargeOutcomeUnknownError` means it may have charged: check the balance before retrying with the same `idempotency_key`. |
-| `billing_statement(*, start_day=None, end_day=None, api_key_id=None)` | `dict` | *(0.16.1)* What the ledger charged per pod and UTC day, removed pods included. `api_key_id` filters by key only on a server that stamps charges with their key — not on lium.io yet: there the answer is the whole account (`api_key_filter.applied` false). |
+| `billing_statement(*, start_day=None, end_day=None)` | `dict` | *(0.16.1)* What the ledger charged per pod and UTC day, removed pods included. |
 | `audit_log(*, since=, until=, action=, source=, api_key_id=, resource_id=, cursor=, limit=100)` | `dict` | *(0.16.1)* Account audit log, newest first (`action` prefix filter such as `pod.`); page with `next_cursor`. |
 | `features()` / `supports(feature)` | `set` / `bool` | *(0.16.1)* Optional capabilities the backend advertises on `GET /version` (e.g. `rent_by_spec`). |
-| `lium.api_keys` (`ApiKeysClient`), `lium.workspaces` (`WorkspacesClient`) | | *(0.16.1)* Keys with scopes and budgets, and team workspaces — the SDK side of `lium keys` / `lium workspaces`; they need a browser session (`LiumSessionError` otherwise) and server support that is **not switched on at lium.io yet** (2026-10-15; `lium.workspaces.enabled()` says). |
 | `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; an API key needs the read scope)* |
 
 ---
@@ -423,8 +421,6 @@ All in `lium.sdk` (and re-exported from `lium`):
 | `LiumError` | Base class; also raised for unmapped HTTP errors (`API error <code>: …`) and when `up()` cannot find the pod it created |
 | `LiumAuthError` | 401 — invalid or revoked API key |
 | `LiumPermissionError` | 403 — `Permission denied: Insufficient balance` is the common one. Subclasses *(0.16.1)*: `LiumInsufficientBalanceError` (`.required`, `.available` USD), `LiumScopeError` (`.scope` the key lacks — another key fixes it, not funds), `LiumBudgetExceededError` (402 `API_KEY_BUDGET_EXCEEDED`: the key's day/month/lifetime budget; `.window`, `.budget_usd`, `.spent_usd`) |
-| `LiumSessionError` | *(0.16.1, a `LiumAuthError`)* a browser session (`lium workspaces login`) is missing or refused — an API key cannot fix it |
-| `LiumCardTopUpError` / `LiumChargeOutcomeUnknownError` | *(0.16.1)* `topup_card()` did not charge (`.code`: `CARD_DECLINED`, `NO_SAVED_CARD`, …) / may have charged: check the balance first |
 | `ClusterNotListedError` | *(0.16.1)* `up_cluster()` may have rented (`.confirmed`, `.pod_ids`); a second call may rent a second cluster |
 | `LiumNotFoundError` | 404 |
 | `LiumRateLimitError` | 429 (retried 3× first for every call except the rent POST inside `up()` and `pod_events()`, which are sent once) |
