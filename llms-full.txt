@@ -15,7 +15,7 @@ Lium — agent-first compute: a GPU rental platform. Pods are Docker containers 
 - **Docs**: https://docs.lium.io
 - **Dashboard**: https://lium.io
 
-> **Covers lium CLI and SDK 0.16.1** (released 2026-10-14) · **last updated 2026-10-15**. Older installs: `pip install -U lium.io`, and check yours with `lium --version`.
+> **Covers lium CLI and SDK 0.16.2** (released 2026-10-15) · **last updated 2026-10-15**. Older installs: `pip install -U lium.io`, and check yours with `lium --version`.
 
 ## Quick Install
 
@@ -2216,7 +2216,7 @@ call `rsync` yourself with `pod.host`, `pod.ssh_port` and `lium.config.ssh_key_p
 | `wallets()`, `add_wallet(bt_wallet)`, `convert_alpha(usd, netuid=…)`, `company_wallet(app_id)`, `alpha_subnets()` | | TAO and alpha funding plumbing used by `lium fund`. |
 | `topup_checkout_link(amount_usd, success_url=None, cancel_url=None)` | `dict` | *(0.16.1)* A Stripe Checkout `url` for a **person** to pay by card (min $10); nothing is charged by the call. Needs a `billing`-scope key. |
 | `wait_for_credit(baseline, timeout=600)` | `dict` | *(0.16.1)* Poll until the balance rises above `baseline` (read `balance()` before paying): `{credited, balance, seconds}`. |
-| `billing_statement(*, start_day=None, end_day=None)` | `dict` | *(0.16.1)* What the ledger charged per pod and UTC day, removed pods included. |
+| `billing_statement(*, start_day=None, end_day=None)` | `dict` | *(0.16.1)* What the ledger charged, removed pods included: `days` has one entry per billing-ledger row, so a UTC day can appear more than once (a pod moved node, or billing stopped and resumed) *(wording 0.16.2)*. |
 | `audit_log(*, since=, until=, action=, source=, api_key_id=, resource_id=, cursor=, limit=100)` | `dict` | *(0.16.1)* Account audit log, newest first (`action` prefix filter such as `pod.`); page with `next_cursor`. |
 | `features()` / `supports(feature)` | `set` / `bool` | *(0.16.1)* Optional capabilities the backend advertises on `GET /version` (e.g. `rent_by_spec`). |
 | `events(*, since=, pod_id=, api_key_id=, limit=200)` | `list[dict]` | The account's event log, newest first: each entry names the session or API key (`actor.api_key_id` / `api_key_name`, `None` for the platform) behind a rent, reboot, edit or delete; `pod_id` also answers for a deleted pod *(since 0.0.37; an API key needs the read scope)* |
