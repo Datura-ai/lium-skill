@@ -38,6 +38,15 @@ off that open lium PR's `--help` and is not in the released binary yet.
 - [lium mine](#lium-mine)
 - [lium provider](#lium-provider)
 - [lium gpu-splitting](#lium-gpu-splitting)
+- [lium whoami](#lium-whoami)
+- [lium spend](#lium-spend)
+- [lium billing](#lium-billing)
+- [lium request](#lium-request)
+- [lium cp](#lium-cp)
+- [lium clusters](#lium-clusters)
+- [lium workspaces](#lium-workspaces)
+- [lium keys](#lium-keys)
+- [lium completion](#lium-completion)
 - [Batch Operations](#batch-operations)
 - [Pod Targeting](#pod-targeting)
 - [Environment Variables](#environment-variables)
@@ -826,6 +835,117 @@ lium gpu-splitting verify                       # verify the host meets the requ
 
 `setup` is the only one that changes the host, and it stops on an interactive
 confirmation of the plan — pass `--yes` from a script.
+
+## lium whoami
+
+Show the API key in use (fingerprint and source), the account, balance, SSH key and CLI version.
+The first thing to run when a command answers 401 or acts on the wrong account.
+
+```bash
+lium whoami
+lium whoami --json | jq .account_id
+```
+
+## lium spend
+
+Hourly burn, estimated spend per active pod, and the runway the balance leaves. Spent is
+price × wall time since each pod was created (a PENDING pod is $0); it is an estimate, not the
+billed amount — `lium billing history` is the ledger.
+
+```bash
+lium spend
+lium spend --format json | jq '.burn_per_hour, .runway_hours'
+```
+
+## lium billing
+
+The account's charges as the ledger recorded them.
+
+```bash
+lium billing history                  # every pod charged, removed ones included
+lium billing history --key agent-1    # what one API key's pods cost
+```
+
+## lium request
+
+Ask providers for a GPU type that is sold out. The providers who list that GPU type are told,
+and the request shows on https://lium.io/machine-requests.
+
+```bash
+lium request B300 -n 8     # -n/--count: GPUs wanted on one node
+lium request H200 --json
+```
+
+## lium cp
+
+Copy files between two pods directly over SSH: the data goes pod to pod, not through this
+machine. A one-off key is placed for the copy and removed afterwards. Both pods need `rsync`.
+POD is a name, HUID, id or index from `lium ps`; a trailing `/` on a source directory copies its
+contents, as in rsync.
+
+```bash
+lium cp dev-pod:/workspace/src train-pod:/workspace/
+lium cp 1:/workspace/ckpt/ 2:/workspace/ckpt/ --exclude '*.tmp' --bwlimit 50000
+#  --bwlimit KIB_PER_S  --exclude PATTERN (repeatable)  --delete  --json
+```
+
+## lium clusters
+
+Multi-node clusters on one InfiniBand/RoCE fabric: rent N whole nodes of one fabric as a single
+all-or-nothing cluster. Every member runs the cluster template, shares the pod name and gets a
+private overlay address (10.42.0.<rank+1>); node 0 is the master.
+
+```bash
+lium clusters                         # fabrics with free nodes (same as 'clusters list')
+lium clusters --format json           # for scripts and agents
+lium clusters up 1 --nodes 2 -n job   # rent 2 nodes of fabric #1 as one cluster
+lium clusters ps                      # your clusters
+lium clusters show job --hostfile     # members, overlay IPs, mpirun hostfile
+lium clusters rm job -y               # remove every member
+```
+
+## lium workspaces
+
+Teams: list the workspaces you belong to, pick one, manage members and billing. A key acts in
+exactly one workspace. Create / invite / remove / transfer / delete need a session from
+`lium workspaces login` (e-mail and password).
+
+```bash
+lium workspaces                      # the workspace this key acts in
+lium workspaces login                # sign in once for create / invite / remove / transfer / delete
+lium workspaces use research         # make 'research' the default for every command
+lium --workspace research ps         # one command in another workspace (its key must be configured)
+```
+
+Sub-commands: `list`, `members`, `create`, `invite`, `remove`, `transfer-billing`, `use`,
+`login`, `delete`.
+
+## lium keys
+
+API keys, per workspace, with scopes and USD budgets (day, month, lifetime). Needs
+`lium workspaces login` first (a key cannot manage keys). Without `--scope` a key gets read, rent
+and manage; `--scope billing` (money routes only) cannot be combined with another scope. When a
+budget is hit the server deletes the key's pods (data outside a volume is lost) and refuses rents
+through it with `API_KEY_BUDGET_EXCEEDED` (exit 6). The key is printed once.
+
+```bash
+lium keys                                          # the keys of the current workspace
+lium keys create agent-1 --scope read --scope rent --daily-budget 20
+lium keys show agent-1                             # what the key can do, its budget, its pods
+lium keys scopes                                   # every scope, in the server's words
+lium keys create ci --workspace research --save    # a key for that workspace, saved for --workspace
+```
+
+Sub-commands: `list`, `create`, `show`, `budget`, `scopes`.
+
+## lium completion
+
+Print the shell line that enables tab completion, or install it.
+
+```bash
+lium completion zsh            # print the line for zsh
+lium completion --install      # append it to the current shell's rc file
+```
 
 ## Batch Operations
 
