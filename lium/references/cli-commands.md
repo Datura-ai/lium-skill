@@ -499,7 +499,8 @@ lium scp all ./config.json                 # upload to every pod
 lium scp 2 /root/output.log ./outputs -d   # download from pod #2 into ./outputs/
 ```
 
-There is no `-r/--recursive` and no `-p/--preserve`; use
+*(0.17.0)* A download whose SOURCE_PATH is a remote directory is refused and leaves no
+empty local file behind. There is no `-r/--recursive` and no `-p/--preserve`; use
 [`lium rsync`](#lium-rsync) for directories.
 
 ## lium rsync
@@ -796,6 +797,14 @@ lium mine [OPTIONS]
   -a, --auto         Run without prompting
   -v, --verbose      Show the plan banner
 ```
+
+With `--register TOKEN` (the command the portal's Add Node page shows) it also adds the
+node to your account and waits until it is listed; `lium mine --help` lists `--price`,
+`--gpu-type`, `--wait` and `--portal-url` for that path. *(0.17.0)* `--ip` registers the
+node at a given public IPv4 (CGNAT, or a port-forwarding VPS), `--internal-port` sets the
+port the service listens on (default 8080) and `--external-port` the port validators
+connect to (default: the internal one). A service or SSH port another process holds now
+fails before `docker compose up`, naming that process.
 
 ## lium provider
 

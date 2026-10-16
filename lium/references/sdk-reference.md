@@ -133,7 +133,7 @@ use `schedule_termination` or `cap_spend`.
 | `wait_for_port(pod, port, *, timeout=600)` | `None` | *(0.16.1)* Block until the port accepts connections inside the pod; `TimeoutError` otherwise. |
 | `gpu_stats(pod)` | `list[GpuStats]` | *(0.16.1)* Per-GPU utilisation, memory, temperature, power via `nvidia-smi`. |
 | `ssh_session(pod)` | context manager | *(0.16.1)* One SSH connection reused by every `exec`/`upload`/`download` inside the block (saves a handshake per call). |
-| `stream_exec(pod, *, command, env=None, pty=True)` | `Generator[dict]` | Yields `{"type": "stdout"\|"stderr", "data": str}`; a PTY merges stderr into stdout, `pty=False` *(0.16.1)* keeps them apart. The generator's return value is the exit status. |
+| `stream_exec(pod, *, command, env=None, pty=True, check=False)` | `Generator[dict]` | Yields `{"type": "stdout"\|"stderr", "data": str}`; a PTY merges stderr into stdout, `pty=False` *(0.16.1)* keeps them apart. The generator's return value is the exit status; `check=True` *(0.17.0)* raises `RemoteExecutionError` after the last chunk on a non-zero exit. |
 | `exec_all(pods, *, command, env=None, max_workers=10)` | `list[dict]` | Threaded `exec` across pods; each result carries `"pod"`. |
 | `ssh(pod, *, refresh=False)` | `str` | `ssh -i <key> -p <port> -o StrictHostKeyChecking=accept-new -o 'UserKnownHostsFile="/home/<you>/.lium/known_hosts/<pod id>"' root@<host>` — a ready command line with the pod's host key pinned. `refresh=True` re-reads the pod first. |
 | `ssh_argv(pod)` | `list[str]` | The same command as an argument list for `subprocess`. |

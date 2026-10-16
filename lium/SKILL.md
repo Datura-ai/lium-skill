@@ -13,7 +13,7 @@ Lium — agent-first compute: a GPU rental platform. Pods are Docker containers 
 - **Docs**: https://docs.lium.io
 - **Dashboard**: https://lium.io
 
-> **Covers lium CLI and SDK 0.16.2** (released 2026-10-15) · **last updated 2026-10-15**. Older installs: `pip install -U lium.io`, and check yours with `lium --version`.
+> **Covers lium CLI and SDK 0.17.0** (released 2026-10-15) · **last updated 2026-10-16**. Older installs: `pip install -U lium.io`, and check yours with `lium --version`.
 
 ## Quick Install
 
