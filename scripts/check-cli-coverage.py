@@ -2,6 +2,7 @@
 """Fail when the released CLI has moved past the docs: every top-level `lium --help` command needs a `## lium <cmd>`
 section in references/cli-commands.md, and SKILL.md's "Covers lium CLI and SDK X" line must name `lium --version`.
 The e2e job runs this daily, so a CLI release turns it red until the reference catches up (the 1 Oct -> 0.16.1 gap)."""
+import os
 import re
 import subprocess
 import sys
@@ -27,7 +28,9 @@ if not covers:
 elif covers.group(1) != version:
     problems.append(f"SKILL.md covers {covers.group(1)}, the released CLI is {version}: review the release, then bump the line")
 assert commands, "parsed no commands from `lium --help`"  # the parser itself broke, not the docs
+# A release must not block unrelated PRs and merges: only the daily cron (or a local run) fails, other CI runs warn.
+blocking = os.environ.get("GITHUB_EVENT_NAME", "schedule") in ("schedule", "workflow_dispatch")
 for p in problems:
-    print("::error::" + p)
+    print(("::error::" if blocking else "::warning::") + p)
 print(f"CLI coverage: {len(commands)} commands, {len(missing)} undocumented; docs cover {covers.group(1) if covers else '?'}, CLI {version}")
-sys.exit(1 if problems else 0)
+sys.exit(1 if problems and blocking else 0)

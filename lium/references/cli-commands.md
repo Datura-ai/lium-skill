@@ -198,7 +198,7 @@ see "Before You Rent 8 GPUs" in SKILL.md.
 `config` (e.g. `8×H200`), `gpu_type`, `gpu_count`, `price_per_gpu_hour`,
 `price_per_hour`, `country`, `vram_gb`, `ram_gb`, `disk_gb`, `upload_mbps`,
 `download_mbps`, `available_ports`, `docker_in_docker`, `is_pareto`,
-`max_cuda_version`, `tier` (`secure` or `spot`). There is no `--country` or
+`max_cuda_version`, `tier` (`secure` or `spot`), `available_gpu_count` (the free GPUs of a partly rented node). There is no `--country` or
 `--max-price` filter on `ls`; filter the JSON (`jq`) or use the filters on
 [`lium up`](#lium-up).
 
@@ -434,6 +434,7 @@ lium exec [OPTIONS] TARGETS [COMMAND]
   COMMAND            Command to execute (quote multi-word commands)
   -s, --script TEXT  Execute a local script file on the pod
   -e, --env TEXT     Set environment variables (KEY=VALUE)
+  --max-output-bytes INTEGER  Fail once stdout and stderr together pass this many bytes (default 64 MiB)
   --json             Print machine-readable JSON (stdout, stderr, exit_code) instead of raw output
 ```
 
@@ -548,6 +549,8 @@ lium rm [OPTIONS] [TARGETS]
   -y, --yes  Skip the confirmation prompt; required when stdin is not a terminal
   --in TEXT  Schedule the removal after a duration (e.g. 6h)
   --at TEXT  Schedule the removal at a time (e.g. "tomorrow 01:00")
+  --rating INTEGER   Rate the pod's node 1-5 in the same call
+  --feedback TEXT    Tell Lium how the node went (never blocks the removal)
 ```
 
 `--in` and `--at` **schedule** a removal rather than filtering which pods to
@@ -826,6 +829,7 @@ lium provider [OPTIONS] COMMAND [ARGS]...
 
 Sub-commands: `billing`, `config`, `machine`, `machine-request`, `node`, `portal`,
 `status`, `sync`. Run `lium provider <sub> --help` for their flags.
+`lium provider node address NODE_ID IP_ADDRESS PORT` moves a node to a new IP and port and keeps its id and history.
 
 ## lium gpu-splitting
 
