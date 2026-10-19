@@ -41,7 +41,7 @@ untimed initial test prompt runs before the timed window. Kernel compile and CUD
 Rent a pod with an auto-stop, run the script, then remove the pod:
 
 ```bash
-lium up --gpu H100 -c 1 --name vllm-bench --ttl 75m --budget 2.5 -y
+lium up --gpu H100 -c 1 --name vllm-bench --ttl 75m --budget 2.5 -y --no-ssh
 lium exec vllm-bench -e GPU_LABEL=h100 -e PRICE_PER_HOUR=1.30 --script run_benchmark.sh
 lium scp -d vllm-bench /root/bench-out/h100/result.json ./result.json
 lium rm vllm-bench -y
