@@ -1,12 +1,10 @@
 name: Publish to the MCP Registry
 
-# The registry refuses a version it already holds, so bump `version` in the changed file with every change.
-# server.json is the lium-docs entry, server-gpu-cloud.json the lium-gpu-cloud entry. Both point at
-# docs.lium.io/mcp; the registry refuses one remote URL under two names, so the second adds `?ref=gpu-cloud`.
+# The registry refuses a version it already holds, so bump `version` in server.json with every change.
 on:
   push:
     branches: [main]
-    paths: [server.json, server-gpu-cloud.json]
+    paths: [server.json]
   workflow_dispatch:
 
 jobs:
@@ -18,8 +16,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       # This job holds id-token: write, so the binary is pinned and checked before it runs.
       # To upgrade: change both values to a reviewed release and its line in registry_<version>_checksums.txt.
@@ -36,17 +32,14 @@ jobs:
       - name: Log in with GitHub OIDC
         run: ./mcp-publisher login github-oidc
 
-      # A push publishes only the entries it changed (an unchanged version would be refused); a manual run publishes both.
-      - name: Publish the registry entries
-        env:
-          EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
+      # lium-gpu-cloud replaces the old lium-docs name for the same endpoint. The registry treats one server
+      # under two names as removable spam, and only a deleted entry frees its URL, so delete every lium-docs
+      # version first. A rerun finds it already deleted; if not, publish below fails on the URL conflict.
+      - name: Retire the old lium-docs name
         run: |
-          files="server.json server-gpu-cloud.json"
-          if [ "$EVENT" = push ]; then
-            files=$(git diff --name-only "$BEFORE" HEAD -- $files)
-          fi
-          for f in $files; do
-            echo "Publishing $f"
-            ./mcp-publisher publish "$f"
-          done
+          ./mcp-publisher status --status deleted --all-versions --yes \
+            --message "Replaced by io.github.Datura-ai/lium-gpu-cloud" io.github.Datura-ai/lium-docs \
+            || echo "lium-docs not changed (already deleted?)"
+
+      - name: Publish server.json
+        run: ./mcp-publisher publish

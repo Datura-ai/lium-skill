@@ -47,11 +47,10 @@ lium init
 | `lium/references/` | CLI and SDK references, loaded on demand |
 | `agents/install.sh` | Source of `lium.io/agents/install.sh` (lium.io redirects to the raw file on `main`) |
 | `.claude-plugin/` | Claude Code plugin and marketplace manifests: the `lium` skill plus the MCP server in `.mcp.json` |
-| `server-gpu-cloud.json` | Second [MCP Registry](https://registry.modelcontextprotocol.io) entry, `lium-gpu-cloud`, for the same endpoint; a change on `main` publishes it (bump `version`) |
 | `llms.txt` | Short discovery index for agents |
 | `llms-full.txt` | Self-contained reference, generated from the files above |
 | `scripts/build-llms-full.sh` | Generates `llms-full.txt` (SKILL.md without frontmatter + both references) |
-| `server.json` | [MCP Registry](https://registry.modelcontextprotocol.io) entry for the docs MCP endpoint `https://docs.lium.io/mcp`; a change on `main` publishes it (bump `version`) |
+| `server.json` | [MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.Datura-ai/lium-gpu-cloud` for the hosted MCP endpoint `https://docs.lium.io/mcp` (live GPU prices and rent links, docs search; replaces the old `lium-docs` name); a change on `main` publishes it (bump `version`) |
 | `.github/CODEOWNERS`, `.github/REVIEWING.md` | Who reviews each path and how |
 
 `lium.io/llms.txt` and `lium.io/llms-full.txt` are served from this repo's `main`.
