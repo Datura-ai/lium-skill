@@ -12,6 +12,14 @@ npx skills add Datura-ai/lium-skill --skill lium
 Works in any agent that supports the [Agent Skills](https://agentskills.io)
 standard — Claude Code, Cursor, Codex and others.
 
+In Claude Code, install it as a plugin, which also adds the Lium MCP server
+(`https://docs.lium.io/mcp`: live GPU prices, rent links, docs search):
+
+```
+/plugin marketplace add Datura-ai/lium-skill
+/plugin install lium@lium
+```
+
 Without node, install into the agent skill directories directly:
 
 ```bash
@@ -38,6 +46,8 @@ lium init
 | `lium/SKILL.md` | The skill itself — frontmatter plus agent instructions |
 | `lium/references/` | CLI and SDK references, loaded on demand |
 | `agents/install.sh` | Source of `lium.io/agents/install.sh` (lium.io redirects to the raw file on `main`) |
+| `.claude-plugin/` | Claude Code plugin and marketplace manifests: the `lium` skill plus the MCP server in `.mcp.json` |
+| `server-gpu-cloud.json` | Second [MCP Registry](https://registry.modelcontextprotocol.io) entry, `lium-gpu-cloud`, for the same endpoint; a change on `main` publishes it (bump `version`) |
 | `llms.txt` | Short discovery index for agents |
 | `llms-full.txt` | Self-contained reference, generated from the files above |
 | `scripts/build-llms-full.sh` | Generates `llms-full.txt` (SKILL.md without frontmatter + both references) |
