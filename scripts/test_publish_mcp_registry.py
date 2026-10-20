@@ -33,4 +33,41 @@ for name, publish_rc, live, restore_rc, want_rc, want_restore in CASES:
     print(f"{'ok  ' if ok else 'FAIL'} {name}: rc={rc} restored={restored}")
     failed += not ok
 
+
+# The workflow's concurrency group runs pushes and manual runs one after another, never interleaved. Replay such
+# sequences against a stateful fake registry: after every run at most one of the two names may be active.
+# Each run's publish outcome: ok (lands), fail (never lands), lost (lands but the response is an error).
+SEQUENCES = [
+    ('fail then success', ['fail', 'ok']),
+    ('lost then rerun', ['lost', 'ok']),
+    ('fail, fail, recovery', ['fail', 'fail', 'ok']),
+    ('success then rerun', ['ok', 'ok']),
+]
+for name, outcomes in SEQUENCES:
+    reg = {pub.OLD: 'active', NEW: None}
+    seen = []
+    for outcome in outcomes:
+        def run(args):
+            if args[:3] == ['status', '--status', 'deleted']:
+                reg[pub.OLD] = 'deleted'
+                return 0
+            if args == ['publish']:
+                if reg[NEW] == 'active':
+                    return 1  # the registry refuses a version it already holds
+                if outcome in ('ok', 'lost'):
+                    reg[NEW] = 'active'
+                return 0 if outcome == 'ok' else 1
+            if tuple(args) == RESTORE:
+                if reg[NEW] == 'active':
+                    return 1  # same URL under two names
+                reg[pub.OLD] = 'active'
+                return 0
+            return 0
+
+        pub.publish(run, lambda n, v: reg.get(n) == 'active', NEW, V)
+        seen.append(sum(state == 'active' for state in reg.values()))
+    ok = all(n == 1 for n in seen) and reg[NEW] == 'active'
+    print(f"{'ok  ' if ok else 'FAIL'} {name}: active names after each run={seen}")
+    failed += not ok
+
 raise SystemExit(1 if failed else 0)

@@ -7,6 +7,12 @@ on:
     paths: [server.json]
   workflow_dispatch:
 
+# Registry locks are per server name, so two runs retiring lium-docs and publishing lium-gpu-cloud could interleave
+# and leave both names active. One run at a time; a queued run waits instead of cancelling a half-done one.
+concurrency:
+  group: publish-mcp-registry
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
