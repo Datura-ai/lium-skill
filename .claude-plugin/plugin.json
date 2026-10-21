@@ -1,0 +1,14 @@
+{
+  "name": "lium",
+  "displayName": "Lium GPU Cloud",
+  "description": "Rent GPUs and manage pods on Lium from Claude Code: the lium skill plus the Lium MCP server (live GPU prices, rent links, docs search).",
+  "author": {
+    "name": "Datura AI",
+    "url": "https://lium.io"
+  },
+  "homepage": "https://docs.lium.io",
+  "repository": "https://github.com/Datura-ai/lium-skill",
+  "license": "MIT",
+  "keywords": ["gpu", "gpu-cloud", "h100", "pods", "lium", "mcp"],
+  "skills": ["./lium"]
+}

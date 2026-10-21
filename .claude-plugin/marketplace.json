@@ -1,0 +1,15 @@
+{
+  "name": "lium",
+  "description": "Lium GPU cloud plugins for Claude Code",
+  "owner": {
+    "name": "Datura AI",
+    "url": "https://lium.io"
+  },
+  "plugins": [
+    {
+      "name": "lium",
+      "source": "./",
+      "description": "Rent GPUs and manage pods on Lium: the lium skill plus the Lium MCP server (live GPU prices, rent links, docs search)."
+    }
+  ]
+}

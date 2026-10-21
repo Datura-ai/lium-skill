@@ -7,6 +7,12 @@ on:
     paths: [server.json]
   workflow_dispatch:
 
+# Registry locks are per server name, so two runs retiring lium-docs and publishing lium-gpu-cloud could interleave
+# and leave both names active. One run at a time; a queued run waits instead of cancelling a half-done one.
+concurrency:
+  group: publish-mcp-registry
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -32,5 +38,11 @@ jobs:
       - name: Log in with GitHub OIDC
         run: ./mcp-publisher login github-oidc
 
-      - name: Publish server.json
-        run: ./mcp-publisher publish
+      # lium-gpu-cloud replaces the old lium-docs name for the same endpoint. The registry treats one server
+      # under two names as removable spam, and only a deleted entry frees its URL, so the script deletes every
+      # lium-docs version and publishes; it never restores lium-docs, so a failed run stays red until rerun (see its docstring).
+      - name: Test the publish script
+        run: python3 scripts/test_publish_mcp_registry.py
+
+      - name: Retire lium-docs and publish server.json
+        run: python3 scripts/publish-mcp-registry.py
