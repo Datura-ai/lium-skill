@@ -50,6 +50,7 @@ lium init
 | `llms.txt` | Short discovery index for agents |
 | `llms-full.txt` | Self-contained reference, generated from the files above |
 | `scripts/build-llms-full.sh` | Generates `llms-full.txt` (SKILL.md without frontmatter + both references) |
+| `chrome-extension/` | "Lium GPU Prices" Chrome extension: popup with live GPU prices from `lium.io/pricing.json`; store copy in `STORE_LISTING.md`, test with `node --test chrome-extension/prices.test.mjs` |
 | `server.json` | [MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.Datura-ai/lium-gpu-cloud` for the hosted MCP endpoint `https://docs.lium.io/mcp` (live GPU prices and rent links, docs search; replaces the old `lium-docs` name); a change on `main` publishes it (bump `version`) |
 | `.github/CODEOWNERS`, `.github/REVIEWING.md` | Who reviews each path and how |
 
