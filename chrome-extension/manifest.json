@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Lium GPU Prices",
+  "version": "1.0.0",
+  "description": "Live cloud GPU prices on Lium: H100, H200, B200 and more, cheapest per GPU-hour first, one click to rent.",
+  "homepage_url": "https://lium.io",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Lium GPU Prices",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  },
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "host_permissions": ["https://lium.io/pricing.json"]
+}

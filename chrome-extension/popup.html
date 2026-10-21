@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lium GPU Prices</title>
+  <style>
+    body { margin: 0; width: 340px; font: 13px system-ui, sans-serif; background: #111; color: #eee; }
+    header, footer { padding: 10px 12px; }
+    h1 { font-size: 15px; margin: 0; }
+    p { margin: 4px 0 0; color: #aaa; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 6px 12px; text-align: left; border-top: 1px solid #222; }
+    th { color: #aaa; font-weight: 500; }
+    td.num, th.num { text-align: right; }
+    a { color: #3d8bff; text-decoration: none; }
+    a:hover, a:focus { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>GPU prices on Lium</h1>
+    <p id="status">Loading…</p>
+  </header>
+  <table hidden>
+    <thead><tr><th scope="col">GPU</th><th scope="col" class="num">VRAM</th><th scope="col" class="num">Available</th><th scope="col" class="num">From $/GPU-hr</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <footer><a id="rent" target="_blank" rel="noopener" href="https://lium.io/?utm_source=chrome-extension&amp;utm_medium=extension&amp;utm_campaign=gpu-prices">Rent a GPU on lium.io</a></footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
