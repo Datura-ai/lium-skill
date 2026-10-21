@@ -40,7 +40,7 @@ jobs:
 
       # lium-gpu-cloud replaces the old lium-docs name for the same endpoint. The registry treats one server
       # under two names as removable spam, and only a deleted entry frees its URL, so the script deletes every
-      # lium-docs version, publishes, and reactivates lium-docs if the new name did not land (see its docstring).
+      # lium-docs version and publishes; it never restores lium-docs, so a failed run stays red until rerun (see its docstring).
       - name: Test the publish script
         run: python3 scripts/test_publish_mcp_registry.py
 
