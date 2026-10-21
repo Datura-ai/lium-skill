@@ -2,9 +2,7 @@
 
 Written against `lium --version` **0.0.37**. Every flag below appears in that
 binary's own `--help`; nothing here is extrapolated. When a newer CLI ships,
-`lium <command> --help` is the authority, not this file. The one exception is
-marked inline: an option or command tagged **(lium#NNN, not released)** is read
-off that open lium PR's `--help` and is not in the released binary yet.
+`lium <command> --help` is the authority, not this file.
 
 ## Table of Contents
 
@@ -38,6 +36,13 @@ off that open lium PR's `--help` and is not in the released binary yet.
 - [lium mine](#lium-mine)
 - [lium provider](#lium-provider)
 - [lium gpu-splitting](#lium-gpu-splitting)
+- [lium whoami](#lium-whoami)
+- [lium spend](#lium-spend)
+- [lium billing](#lium-billing)
+- [lium request](#lium-request)
+- [lium cp](#lium-cp)
+- [lium clusters](#lium-clusters)
+- [lium completion](#lium-completion)
 - [Batch Operations](#batch-operations)
 - [Pod Targeting](#pod-targeting)
 - [Environment Variables](#environment-variables)
@@ -193,7 +198,7 @@ see "Before You Rent 8 GPUs" in SKILL.md.
 `config` (e.g. `8×H200`), `gpu_type`, `gpu_count`, `price_per_gpu_hour`,
 `price_per_hour`, `country`, `vram_gb`, `ram_gb`, `disk_gb`, `upload_mbps`,
 `download_mbps`, `available_ports`, `docker_in_docker`, `is_pareto`,
-`max_cuda_version`, `tier` (`secure` or `spot`). There is no `--country` or
+`max_cuda_version`, `tier` (`secure` or `spot`), `available_gpu_count` (the free GPUs of a partly rented node). There is no `--country` or
 `--max-price` filter on `ls`; filter the JSON (`jq`) or use the filters on
 [`lium up`](#lium-up).
 
@@ -429,6 +434,7 @@ lium exec [OPTIONS] TARGETS [COMMAND]
   COMMAND            Command to execute (quote multi-word commands)
   -s, --script TEXT  Execute a local script file on the pod
   -e, --env TEXT     Set environment variables (KEY=VALUE)
+  --max-output-bytes INTEGER  Fail once stdout and stderr together pass this many bytes (default 64 MiB)
   --json             Print machine-readable JSON (stdout, stderr, exit_code) instead of raw output
 ```
 
@@ -444,7 +450,7 @@ lium exec 1 -e API_KEY=xyz "python app.py"
 lium exec 1 --json "python train.py"
 ```
 
-There is no `--timeout`, no `--detach` (lium#211, not released) and no `--output`
+There is no `--timeout`, no `--detach` (added in 0.16.1) and no `--output`
 in 0.0.37. `exec` waits
 for the remote command **and every child that still holds its stdout/stderr**, so
 a job started with a bare `&` keeps `exec` blocked. Detach it fully:
@@ -494,7 +500,8 @@ lium scp all ./config.json                 # upload to every pod
 lium scp 2 /root/output.log ./outputs -d   # download from pod #2 into ./outputs/
 ```
 
-There is no `-r/--recursive` and no `-p/--preserve`; use
+*(0.17.0)* A download whose SOURCE_PATH is a remote directory is refused and leaves no
+empty local file behind. There is no `-r/--recursive` and no `-p/--preserve`; use
 [`lium rsync`](#lium-rsync) for directories.
 
 ## lium rsync
@@ -542,6 +549,8 @@ lium rm [OPTIONS] [TARGETS]
   -y, --yes  Skip the confirmation prompt; required when stdin is not a terminal
   --in TEXT  Schedule the removal after a duration (e.g. 6h)
   --at TEXT  Schedule the removal at a time (e.g. "tomorrow 01:00")
+  --rating INTEGER   Rate the pod's node 1-5 in the same call
+  --feedback TEXT    Tell Lium how the node went (never blocks the removal)
 ```
 
 `--in` and `--at` **schedule** a removal rather than filtering which pods to
@@ -550,8 +559,7 @@ remove; cancel a scheduled one with [`lium schedules rm`](#lium-schedules).
 **Agent usage** — pass `-y` on every `rm`. Without a terminal on stdin (or with
 `LIUM_NONINTERACTIVE=1`) and without `-y`, the command names the pods it would
 have removed and the command to re-run, exits 2 (`confirmation_required`) and
-removes or schedules nothing; a piped `yes` is not approval (lium#246, not
-released; up to lium 0.0.41 a piped `lium rm my-pod` removed the pod).
+removes or schedules nothing; a piped `yes` is not approval (up to lium 0.0.41 a piped `lium rm my-pod` removed the pod).
 ```bash
 lium rm my-pod -y           # single pod
 lium rm -a -y               # all pods
@@ -793,6 +801,14 @@ lium mine [OPTIONS]
   -v, --verbose      Show the plan banner
 ```
 
+With `--register TOKEN` (the command the portal's Add Node page shows) it also adds the
+node to your account and waits until it is listed; `lium mine --help` lists `--price`,
+`--gpu-type`, `--wait` and `--portal-url` for that path. *(0.17.0)* `--ip` registers the
+node at a given public IPv4 (CGNAT, or a port-forwarding VPS), `--internal-port` sets the
+port the service listens on (default 8080) and `--external-port` the port validators
+connect to (default: the internal one). A service or SSH port another process holds now
+fails before `docker compose up`, naming that process.
+
 ## lium provider
 
 Provider-side commands — a different persona from `lium mine`.
@@ -813,6 +829,7 @@ lium provider [OPTIONS] COMMAND [ARGS]...
 
 Sub-commands: `billing`, `config`, `machine`, `machine-request`, `node`, `portal`,
 `status`, `sync`. Run `lium provider <sub> --help` for their flags.
+`lium provider node address NODE_ID IP_ADDRESS PORT` moves a node to a new IP and port and keeps its id and history.
 
 ## lium gpu-splitting
 
@@ -826,6 +843,82 @@ lium gpu-splitting verify                       # verify the host meets the requ
 
 `setup` is the only one that changes the host, and it stops on an interactive
 confirmation of the plan — pass `--yes` from a script.
+
+## lium whoami
+
+Show the API key in use (fingerprint and source), the account, balance, SSH key and CLI version.
+The first thing to run when a command answers 401 or acts on the wrong account.
+
+```bash
+lium whoami
+lium whoami --json | jq .account_id
+```
+
+## lium spend
+
+Hourly burn, estimated spend per active pod, and the runway the balance leaves. Spent is
+price × wall time since each pod was created (a PENDING pod is $0); it is an estimate, not the
+billed amount — `lium billing history` is the ledger.
+
+```bash
+lium spend
+lium spend --format json | jq '.burn_per_hour, .runway_hours'
+```
+
+## lium billing
+
+The account's charges as the ledger recorded them.
+
+```bash
+lium billing history                  # every pod charged, removed ones included
+```
+
+## lium request
+
+Ask providers for a GPU type that is sold out. The providers who list that GPU type are told,
+and the request shows on https://lium.io/machine-requests.
+
+```bash
+lium request B300 -n 8     # -n/--count: GPUs wanted on one node
+lium request H200 --json
+```
+
+## lium cp
+
+Copy files between two pods directly over SSH: the data goes pod to pod, not through this
+machine. A one-off key is placed for the copy and removed afterwards. Both pods need `rsync`.
+POD is a name, HUID, id or index from `lium ps`; a trailing `/` on a source directory copies its
+contents, as in rsync.
+
+```bash
+lium cp dev-pod:/workspace/src train-pod:/workspace/
+lium cp 1:/workspace/ckpt/ 2:/workspace/ckpt/ --exclude '*.tmp' --bwlimit 50000
+#  --bwlimit KIB_PER_S  --exclude PATTERN (repeatable)  --delete  --json
+```
+
+## lium clusters
+
+Multi-node clusters on one InfiniBand/RoCE fabric: rent N whole nodes of one fabric as a single
+all-or-nothing cluster. Every member runs the cluster template, shares the pod name and gets a
+private overlay address (10.42.0.<rank+1>); node 0 is the master.
+
+```bash
+lium clusters                         # fabrics with free nodes (same as 'clusters list')
+lium clusters --format json           # for scripts and agents
+lium clusters up 1 --nodes 2 -n job   # rent 2 nodes of fabric #1 as one cluster
+lium clusters ps                      # your clusters
+lium clusters show job --hostfile     # members, overlay IPs, mpirun hostfile
+lium clusters rm job -y               # remove every member
+```
+
+## lium completion
+
+Print the shell line that enables tab completion, or install it.
+
+```bash
+lium completion zsh            # print the line for zsh
+lium completion --install      # append it to the current shell's rc file
+```
 
 ## Batch Operations
 
