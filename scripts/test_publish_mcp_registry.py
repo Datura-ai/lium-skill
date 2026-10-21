@@ -27,7 +27,7 @@ for name, publish_rc, live, restore_rc, want_rc, want_restore in CASES:
         calls.append(tuple(args))
         return publish_rc if args == ['publish'] else restore_rc if tuple(args) == RESTORE else 0
 
-    rc = pub.publish(run, lambda n, v: (n, v) == (NEW, V) and live, NEW, V)
+    rc = pub.publish(run, lambda n, v: (n, v) == (NEW, V) and live, NEW, V, wait=lambda: None)
     restored = RESTORE in calls
     ok = rc == want_rc and restored == want_restore and calls[0][:3] == ('status', '--status', 'deleted')
     print(f"{'ok  ' if ok else 'FAIL'} {name}: rc={rc} restored={restored}")
@@ -64,10 +64,38 @@ for name, outcomes in SEQUENCES:
                 return 0
             return 0
 
-        pub.publish(run, lambda n, v: reg.get(n) == 'active', NEW, V)
+        pub.publish(run, lambda n, v: reg.get(n) == 'active', NEW, V, wait=lambda: None)
         seen.append(sum(state == 'active' for state in reg.values()))
     ok = all(n == 1 for n in seen) and reg[NEW] == 'active'
     print(f"{'ok  ' if ok else 'FAIL'} {name}: active names after each run={seen}")
+    failed += not ok
+
+
+# A lost publish that is still committing: the new name turns active only after `lands_at` registry reads. Whether
+# it lands during the checks before the restore or after the restore, exactly one name must end up active.
+for name, lands_at in [('late commit before restore', 3), ('late commit after restore', 6), ('never lands', 99)]:
+    reg = {pub.OLD: 'active', NEW: None}
+    reads = []
+
+    def run(args):
+        if args[:3] == ['status', '--status', 'deleted']:
+            reg[pub.OLD] = 'deleted'
+        elif tuple(args) == RESTORE:
+            if reg[NEW] == 'active':
+                return 1
+            reg[pub.OLD] = 'active'
+        return 1 if args == ['publish'] else 0
+
+    def live(n, v):
+        reads.append(n)
+        if len(reads) >= lands_at:
+            reg[NEW] = 'active'
+        return reg.get(n) == 'active'
+
+    rc = pub.publish(run, live, NEW, V, wait=lambda: None)
+    active = [k for k, state in reg.items() if state == 'active']
+    ok = rc == 1 and len(active) == 1
+    print(f"{'ok  ' if ok else 'FAIL'} {name}: active={active}")
     failed += not ok
 
 raise SystemExit(1 if failed else 0)
