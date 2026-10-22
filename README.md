@@ -12,6 +12,14 @@ npx skills add Datura-ai/lium-skill --skill lium
 Works in any agent that supports the [Agent Skills](https://agentskills.io)
 standard — Claude Code, Cursor, Codex and others.
 
+In Claude Code, install it as a plugin, which also adds the Lium MCP server
+(`https://docs.lium.io/mcp`: live GPU prices, rent links, docs search):
+
+```
+/plugin marketplace add Datura-ai/lium-skill
+/plugin install lium@lium
+```
+
 Without node, install into the agent skill directories directly:
 
 ```bash
@@ -38,10 +46,13 @@ lium init
 | `lium/SKILL.md` | The skill itself — frontmatter plus agent instructions |
 | `lium/references/` | CLI and SDK references, loaded on demand |
 | `agents/install.sh` | Source of `lium.io/agents/install.sh` (lium.io redirects to the raw file on `main`) |
+| `.claude-plugin/` | Claude Code plugin and marketplace manifests: the `lium` skill plus the MCP server in `.mcp.json` |
 | `llms.txt` | Short discovery index for agents |
 | `llms-full.txt` | Self-contained reference, generated from the files above |
 | `scripts/build-llms-full.sh` | Generates `llms-full.txt` (SKILL.md without frontmatter + both references) |
-| `server.json` | [MCP Registry](https://registry.modelcontextprotocol.io) entry for the docs MCP endpoint `https://docs.lium.io/mcp`; a change on `main` publishes it (bump `version`) |
+| `examples/benchmarks/` | Reproducible GPU benchmarks run on Lium pods, with raw results ([vLLM serving, 23 Sep 2026](examples/benchmarks/vllm-2026-09-23/)) |
+| `chrome-extension/` | "Lium GPU Prices" Chrome extension: popup with live GPU prices from `lium.io/pricing.json`; store copy in `STORE_LISTING.md`, test with `node --test chrome-extension/prices.test.mjs` |
+| `server.json` | [MCP Registry](https://registry.modelcontextprotocol.io) entry `io.github.Datura-ai/lium-gpu-cloud` for the hosted MCP endpoint `https://docs.lium.io/mcp` (live GPU prices and rent links, docs search; replaces the old `lium-docs` name); a change on `main` publishes it (bump `version`) |
 | `.github/CODEOWNERS`, `.github/REVIEWING.md` | Who reviews each path and how |
 
 `lium.io/llms.txt` and `lium.io/llms-full.txt` are served from this repo's `main`.
