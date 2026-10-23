@@ -79,7 +79,7 @@ retrying yourself.
 | Method | Returns | Notes |
 |--------|---------|-------|
 | `ls(*, gpu_type=None, gpu_count=None, lat=None, lon=None, max_distance_miles=None, min_cuda_version=None)` | `list[ExecutorInfo]` | `gpu_type` is a short name (`"H200"`, `"RTX4090"`); `gpu_count` matches nodes with exactly that many GPUs. No country or price filter — filter the list yourself. |
-| `ls(…, min_cpus=None, view="summary")` | `list[ExecutorInfo]` | *(0.16.1)* `min_cpus` floors the CPU thread count; `view="full"` returns the whole node-check scrape in `specs`. |
+| `ls(…, min_cpus=None, view="summary")` | `list[ExecutorInfo]` | *(0.16.1)* `min_cpus` floors the CPU thread count; `view="full"` returns the whole public node-check scrape in `specs`, without what the renters' pods are doing (docker containers, GPU processes, per-GPU load, memory in use, current clocks and PCIe link); a renter reads their own pod's load with `gpu_stats`. |
 | `ls(…, nvlink=True, min_download_mbps=2000)` | `list[ExecutorInfo]` | Only nodes where Lium saw every GPU pair on NVLink / whose Download (Mbps, the `lium ls` figure) is at least that; unreported nodes excluded; sent to the API and applied client-side too *(since 0.4.0, lium#149)*. |
 | `get_executor(executor)` | `ExecutorInfo \| None` | Node by UUID or HUID (`cosmic-hawk-f2`) against the `ls()` listing; `ValueError` when a HUID names two nodes *(0.16.1; 0.0.37: UUID only, `executor_id`)*. |
 | `gpu_types()` | `set[str]` | Machine names advertised by `/machines`. |
