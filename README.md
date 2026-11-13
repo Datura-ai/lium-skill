@@ -3,6 +3,31 @@
 The `lium` agent skill — teaches an AI coding agent to rent GPUs and manage pods
 on [Lium](https://lium.io), agent-first compute: a GPU rental platform.
 
+## Hosted MCP server
+
+Connect any MCP client to `https://docs.lium.io/mcp` (streamable HTTP). It finds GPUs with live prices and rent links and searches the Lium docs, with no key. Renting and removing pods use `https://docs.lium.io/mcp/account`: sign in with Lium or send an API key.
+
+Claude Code:
+
+```bash
+claude mcp add --transport http lium https://docs.lium.io/mcp
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.lium]
+url = "https://docs.lium.io/mcp"
+```
+
+Any other client:
+
+```json
+{ "mcpServers": { "lium": { "type": "http", "url": "https://docs.lium.io/mcp" } } }
+```
+
+Full guide: https://docs.lium.io/developers/mcp
+
 ## Install
 
 ```bash
